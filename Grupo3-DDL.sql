@@ -36,6 +36,8 @@ GO
 CREATE SCHEMA coberturas;
 GO
 
+SELECT * FROM socios.socio
+
 -- Creación de tablas
 CREATE TABLE socios.socio (
     idSocio INT PRIMARY KEY IDENTITY(1,1),
@@ -60,7 +62,7 @@ GO
 
 CREATE TABLE actividades.actividadRecreativa (
     idActividad INT PRIMARY KEY IDENTITY(1,1), -- Aunque dice idSitio y no recuerdo el porque
-	descripcion TEXT NOT NULL,
+	descripcion VARCHAR(50) NOT NULL,
 	horario VARCHAR(50) NOT NULL,
 	tarifaSocio DECIMAL(10, 2) CHECK (tarifaSocio > 0),
 	tarifaInvitado DECIMAL(10, 2) CHECK (tarifaInvitado > 0)
@@ -70,7 +72,7 @@ GO
 CREATE TABLE actividades.deporteDisponible (
     idDeporte INT PRIMARY KEY IDENTITY(1,1), -- Corregir en el DER que solo dice "id"
     tipo VARCHAR(50) NOT NULL,
-    descripcion TEXT NOT NULL,
+    descripcion VARCHAR(50) NOT NULL,
 	horario VARCHAR(50) NOT NULL,
     costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0)
 );
@@ -89,7 +91,7 @@ GO
 CREATE TABLE pagos.medioDePago (
     idMedioPago INT PRIMARY KEY IDENTITY(1,1), -- Corregir en el DER que solo dice "id"
     tipo VARCHAR(50) NOT NULL,
-    descripcion TEXT NOT NULL,
+    descripcion VARCHAR(50) NOT NULL,
 );
 GO
 
@@ -131,7 +133,7 @@ GO
 CREATE TABLE coberturas.coberturaDisponible (
     idCoberturaDisponible INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(100) NOT NULL,
-    descripcion TEXT NOT NULL
+    descripcion VARCHAR(50) NOT NULL
 );
 GO
 
@@ -172,7 +174,7 @@ CREATE TABLE itinerarios.itinerario (
 );
 GO
 
-CREATE TABLE tutorACargo (
+CREATE TABLE socios.tutorACargo (
     dniTutor BIGINT CHECK (dniTutor > 0) PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
     apellido VARCHAR(100) NOT NULL,
@@ -184,7 +186,7 @@ GO
 
 CREATE TABLE socios.rolVigente (
     idRol INT PRIMARY KEY IDENTITY(1,1),
-    descripcion TEXT NOT NULL
+    descripcion VARCHAR(50) NOT NULL
 	-- Capaz podrían ir también para tener una relación entre el rol y el socio en cuestión
 	-- idSocioReferido INT NOT NULL,
     -- FOREIGN KEY (idSocioReferido) REFERENCES socios.socio(idSocio)
