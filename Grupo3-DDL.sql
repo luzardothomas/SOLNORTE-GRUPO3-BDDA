@@ -6,7 +6,7 @@
 --   - Codina, Santiago Ivan - 44.391.352
 --   - Meynet, Mauro Fernando - 43.252.948
 --   - Santillan, Lautaro Ezequiel - 45.175.053
---   - [Thomas] - [DNI]
+--   - Luzardo, Thomas Gaston - 42.597.231
 ----------------------------------------------------------------------------------------------------
 
 -- Crear la base de datos SolNorte_Grupo3
@@ -39,8 +39,8 @@ GO
 -- Creación de tablas
 CREATE TABLE socios.socio (
     idSocio INT PRIMARY KEY IDENTITY(1,1),
-	dni VARCHAR(8) UNIQUE NOT NULL,
-	cuil VARCHAR(11) UNIQUE NOT NULL,
+	dni BIGINT NOT NULL CHECK (dni > 0),
+	cuil BIGINT NOT NULL CHECK (cuil > 0),
     nombre VARCHAR(100) NOT NULL,
     apellido VARCHAR(100) NOT NULL,
 	email VARCHAR(100) UNIQUE,
