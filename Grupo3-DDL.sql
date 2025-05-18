@@ -51,7 +51,7 @@ CREATE TABLE socios.socio (
 	usuario VARCHAR(50) UNIQUE,
 	contraseña VARCHAR(10),
 	estadoMembresia VARCHAR(8) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso', 'Inactivo')),
-	saldoAFavor DECIMAL(10, 2)
+	saldoAFavor DECIMAL(10, 2) CHECK (saldoAFavor >= 0)
 	-- PODRIAN IR...
     --direccion VARCHAR(100),
     --fechaAlta DATE DEFAULT GETDATE()
@@ -62,8 +62,8 @@ CREATE TABLE actividades.actividadRecreativa (
     idActividad INT PRIMARY KEY IDENTITY(1,1), -- Aunque dice idSitio y no recuerdo el porque
 	descripcion TEXT NOT NULL,
 	horario VARCHAR(50) NOT NULL,
-	tarifaSocio DECIMAL(10, 2),
-	tarifaInvitado DECIMAL(10, 2)
+	tarifaSocio DECIMAL(10, 2) CHECK (tarifaSocio > 0),
+	tarifaInvitado DECIMAL(10, 2) CHECK (tarifaInvitado > 0)
 );
 GO
 
@@ -72,7 +72,7 @@ CREATE TABLE actividades.deporteDisponible (
     tipo VARCHAR(50) NOT NULL,
     descripcion TEXT NOT NULL,
 	horario VARCHAR(50) NOT NULL,
-    costoPorMes DECIMAL(10, 2)
+    costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0)
 );
 GO
 
@@ -112,7 +112,7 @@ GO
 
 CREATE TABLE pagos.reembolso (
     idFacturaReembolso INT PRIMARY KEY IDENTITY(1,1),
-    montoReembolsado DECIMAL(10, 2) NOT NULL CHECK (cuitDestinatario > 0),
+    montoReembolsado DECIMAL(10, 2) NOT NULL CHECK (montoReembolsado > 0),
 	cuitDestinatario BIGINT NOT NULL CHECK (cuitDestinatario > 0),
 	medioDePago TEXT NOT NULL
 );
@@ -148,7 +148,7 @@ GO
 CREATE TABLE socios.categoriaSocio (
     idCategoria INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(50) NOT NULL,
-    costoMembresia DECIMAL(10, 2) NOT NULL
+    costoMembresia DECIMAL(10, 2) NOT NULL CHECK (costoMembresia > 0)
 	-- Capaz nos convendría poner fecha de inicio y fin (si tuviera) de la categoria
 );
 GO
@@ -156,7 +156,7 @@ GO
 CREATE TABLE descuentos.descuento (
     idDescuento INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(100) NOT NULL,
-    porcentajeDescontado DECIMAL(5, 2)
+    porcentajeDescontado DECIMAL(5, 2) CHECK (porcentajeDescontado > 0)
 );
 GO
 
