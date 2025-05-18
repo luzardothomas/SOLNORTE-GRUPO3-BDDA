@@ -61,7 +61,7 @@ GO
 CREATE TABLE actividades.actividadRecreativa (
     idActividad INT PRIMARY KEY IDENTITY(1,1), -- Aunque dice idSitio y no recuerdo el porque
 	descripcion TEXT NOT NULL,
-	horario INT,
+	horario VARCHAR(50) NOT NULL,
 	tarifaSocio DECIMAL(10, 2),
 	tarifaInvitado DECIMAL(10, 2)
 );
@@ -70,8 +70,8 @@ GO
 CREATE TABLE actividades.deporteDisponible (
     idDeporte INT PRIMARY KEY IDENTITY(1,1), -- Corregir en el DER que solo dice "id"
     tipo VARCHAR(50) NOT NULL,
-    descripcion TEXT,
-	horario INT,
+    descripcion TEXT NOT NULL,
+	horario VARCHAR(50) NOT NULL,
     costoPorMes DECIMAL(10, 2)
 );
 GO
@@ -89,7 +89,7 @@ GO
 CREATE TABLE pagos.medioDePago (
     idMedioPago INT PRIMARY KEY IDENTITY(1,1), -- Corregir en el DER que solo dice "id"
     tipo VARCHAR(50) NOT NULL,
-    descripcion TEXT,
+    descripcion TEXT NOT NULL,
 );
 GO
 
@@ -100,21 +100,21 @@ CREATE TABLE pagos.facturaCobro (
 	fechaSegundoVencimiento DATE NOT NULL,
     cuitDeudor INT NOT NULL,
 	tipoMedioDePago INT NOT NULL, -- Agregar FK en el DER
-	direccion VARCHAR(100),
-	tipoCobro VARCHAR(25),
-	numeroCuota INT,
-	servicioPagado VARCHAR(50),
-	importeBruto DECIMAL(10, 2) NOT NULL,
-    importeTotal DECIMAL(10, 2) NOT NULL,
+	direccion VARCHAR(100) NOT NULL,
+	tipoCobro VARCHAR(25) NOT NULL,
+	numeroCuota INT NOT NULL CHECK (numeroCuota > 0),
+	servicioPagado VARCHAR(50) NOT NULL,
+	importeBruto DECIMAL(10, 2) NOT NULL CHECK (importeBruto > 0),
+    importeTotal DECIMAL(10, 2) NOT NULL CHECK (importeTotal > 0),
 	FOREIGN KEY (tipoMedioDePago) REFERENCES pagos.medioDePago(idMedioPago)
 );
 GO
 
 CREATE TABLE pagos.reembolso (
     idFacturaReembolso INT PRIMARY KEY IDENTITY(1,1),
-    montoReembolsado DECIMAL(10, 2) NOT NULL,
-	cuitDestinatario INT NOT NULL,
-	medioDePago INT
+    montoReembolsado DECIMAL(10, 2) NOT NULL CHECK (cuitDestinatario > 0),
+	cuitDestinatario BIGINT NOT NULL CHECK (cuitDestinatario > 0),
+	medioDePago TEXT NOT NULL
 );
 GO
 
@@ -122,7 +122,7 @@ CREATE TABLE pagos.medioEnUso (
     idPago INT PRIMARY KEY IDENTITY(1,1),
 	idSocio INT NOT NULL, -- No puse DNI del socio
     idMedioDePago INT NOT NULL,
-	numeroTarjeta INT,
+	numeroTarjeta BIGINT CHECK (numeroTarjeta > 0),
     FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
     FOREIGN KEY (idMedioDePago) REFERENCES pagos.medioDePago(idMedioPago)
 );
@@ -131,7 +131,7 @@ GO
 CREATE TABLE coberturas.coberturaDisponible (
     idCoberturaDisponible INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(100) NOT NULL,
-    descripcion TEXT
+    descripcion TEXT NOT NULL
 );
 GO
 
@@ -173,7 +173,7 @@ CREATE TABLE itinerarios.itinerario (
 GO
 
 CREATE TABLE tutorACargo (
-    dniTutor INT PRIMARY KEY,
+    dniTutor BIGINT CHECK (dniTutor > 0) PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
     apellido VARCHAR(100) NOT NULL,
 	email VARCHAR(100) UNIQUE,
@@ -184,7 +184,7 @@ GO
 
 CREATE TABLE socios.rolVigente (
     idRol INT PRIMARY KEY IDENTITY(1,1),
-    descripcion TEXT
+    descripcion TEXT NOT NULL
 	-- Capaz podrían ir también para tener una relación entre el rol y el socio en cuestión
 	-- idSocioReferido INT NOT NULL,
     -- FOREIGN KEY (idSocioReferido) REFERENCES socios.socio(idSocio)
