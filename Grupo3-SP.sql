@@ -258,24 +258,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DELETE FROM socios.socio
-    WHERE idSocio = @idSocio and estadoMembresia = 'Inactivo';
-    
-    IF @@ROWCOUNT = 0
-    BEGIN
-        RAISERROR('No se encontró ningún socio con id = %d o el socio encontrado esta actualmente activo', 16, 1, @idSocio);
-    END
-END
-GO
-
--- ELIMINAR SOCIO
-
-CREATE OR ALTER PROCEDURE socios.eliminarSocio
-    @idSocio INT
-AS
-BEGIN
-    SET NOCOUNT ON;
-
 	DECLARE @estadoMembresia VARCHAR(8) = (SELECT s.estadoMembresia FROM socios.socio s WHERE idSocio = @idSocio);
 
 	IF @estadoMembresia IN('Moroso','Activo')
