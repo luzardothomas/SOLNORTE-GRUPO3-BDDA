@@ -280,7 +280,10 @@ BEGIN
 END
 GO
 
-CREATE OR ALTER PROCEDURE socios.Insertar_CategoriaSocio
+
+--INSERTAR CATEGORÍA DE SOCIO
+
+CREATE OR ALTER PROCEDURE socios.insertarCategoriaSocio
     @tipo           VARCHAR(50),
     @costoMembresia DECIMAL(10,2)
 AS
@@ -292,11 +295,13 @@ BEGIN
 END
 GO
 
-EXEC socios.sp_Insertar_CategoriaSocio Cadete, 5000
+EXEC socios.insertarCategoriaSocio Cadete, 5000
 
 select * from socios.categoriaSocio
 
-CREATE PROCEDURE socios.modificar_CategoriaSocio
+--MODIFICAR CATEGORÍA DE SOCIO
+
+CREATE OR ALTER PROCEDURE socios.modificarCategoriaSocio
     @idCategoria    INT,
     @tipo           VARCHAR(50)     = NULL,
     @costoMembresia DECIMAL(10,2)   = NULL
@@ -315,9 +320,11 @@ BEGIN
 END
 GO
 
-EXEC socios.modificar_CategoriaSocio 1, Joven, 5500
+EXEC socios.modificarCategoriaSocio 1, Joven, 5500
 
-CREATE OR ALTER PROCEDURE socios.Eliminar_CategoriaSocio
+--ELIMINAR CATEGORÍA DE SOCIO
+
+CREATE OR ALTER PROCEDURE socios.eliminarCategoriaSocio
     @idCategoria INT
 AS
 BEGIN
@@ -331,4 +338,56 @@ BEGIN
 END
 GO
 
-EXEC socios.Eliminar_CategoriaSocio 2
+EXEC socios.eliminarCategoriaSocio 2
+
+CREATE OR ALTER PROCEDURE socios.insertarRolDisponible
+    @idRol       INT,
+    @descripcion VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO socios.rolDisponible (idRol, descripcion)
+    VALUES (@idRol, @descripcion);
+END
+GO
+
+EXEC socios.insertarRolDisponible 1, Administrador
+GO
+
+CREATE OR ALTER PROCEDURE socios.modificarRolDisponible
+    @idRol       INT,
+    @descripcion VARCHAR(50) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE socios.rolDisponible
+    SET
+        descripcion = COALESCE(@descripcion, descripcion)  -- mantendrá su valor inicial si es NULL
+    WHERE idRol = @idRol
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('No se encontró rol con id=%d.', 16, 1, @idRol);
+END
+GO
+
+EXEC socios.modificarRolDisponible 1, 'Mate sin Azucar'
+
+CREATE OR ALTER PROCEDURE socios.eliminarRolDisponible
+    @idRol INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM socios.rolDisponible
+    WHERE idRol = @idRol
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('No se encontró rol activo con id=%d.', 16, 1, @idRol);
+END
+GO
+
+EXEC socios.eliminarRolDisponible 1
+
+SELECT * FROM socios.rolDisponible

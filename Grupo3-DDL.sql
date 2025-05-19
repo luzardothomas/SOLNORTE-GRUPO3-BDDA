@@ -64,8 +64,8 @@ CREATE TABLE actividades.actividadRecreativa (
     descripcion VARCHAR(50) NOT NULL,
     horaInicio VARCHAR(50) NOT NULL,
     horaFin VARCHAR(50) NOT NULL,
-    tarifaSocio DECIMAL(10, 2) CHECK (tarifaSocio > 0),
-    tarifaInvitado DECIMAL(10, 2) CHECK (tarifaInvitado > 0)
+    tarifaSocio DECIMAL(10, 2) CHECK (tarifaSocio > 0) NOT NULL,
+    tarifaInvitado DECIMAL(10, 2) CHECK (tarifaInvitado > 0) NOT NULL
 );
 GO
 
@@ -74,7 +74,7 @@ CREATE TABLE actividades.deporteDisponible (
     idDeporte INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(50) NOT NULL,
     descripcion VARCHAR(50) NOT NULL,
-    costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0)
+    costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0) NOT NULL
 );
 GO
 
