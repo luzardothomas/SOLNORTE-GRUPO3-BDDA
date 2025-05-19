@@ -7,7 +7,8 @@ DROP TABLE itinerarios.itinerario
 DROP TABLE actividades.actividadRecreativa
 DROP TABLE actividades.deporteActivo
 DROP TABLE actividades.deporteDisponible
-DROP TABLE descuentos.descuento
+DROP TABLE descuentos.descuentoVigente
+DROP TABLE descuentos.descuentoDisponible
 DROP TABLE socios.tutorACargo
 DROP TABLE socios.categoriaSocio
 DROP TABLE coberturas.prepagaEnUso
