@@ -289,9 +289,11 @@ CREATE OR ALTER PROCEDURE socios.insertarCategoriaSocio
 AS
 BEGIN
     SET NOCOUNT ON;
-    
+    IF (@costoMembresia>0)
+	BEGIN
     INSERT INTO socios.categoriaSocio (tipo, costoMembresia)
-    VALUES (@tipo, @costoMembresia);
+    VALUES (@tipo, @costoMembresia) ;
+	END
 END
 GO
 
@@ -313,7 +315,7 @@ BEGIN
     SET
         tipo           = COALESCE(@tipo, tipo),
         costoMembresia = COALESCE(@costoMembresia, costoMembresia)
-    WHERE idCategoria = @idCategoria
+    WHERE idCategoria = @idCategoria AND (@costoMembresia>0)
 
     IF @@ROWCOUNT = 0
         RAISERROR('No se encontró categoría con id=%d.',16,1,@idCategoria);
@@ -321,7 +323,7 @@ END
 GO
 
 EXEC socios.modificarCategoriaSocio 1, Joven, 5500
-
+GO
 --ELIMINAR CATEGORÍA DE SOCIO
 
 CREATE OR ALTER PROCEDURE socios.eliminarCategoriaSocio
@@ -339,6 +341,7 @@ END
 GO
 
 EXEC socios.eliminarCategoriaSocio 2
+GO
 
 CREATE OR ALTER PROCEDURE socios.insertarRolDisponible
     @idRol       INT,
@@ -346,9 +349,11 @@ CREATE OR ALTER PROCEDURE socios.insertarRolDisponible
 AS
 BEGIN
     SET NOCOUNT ON;
-
+	IF(@idRol > 0)
+	BEGIN
     INSERT INTO socios.rolDisponible (idRol, descripcion)
     VALUES (@idRol, @descripcion);
+	END
 END
 GO
 
@@ -391,3 +396,61 @@ GO
 EXEC socios.eliminarRolDisponible 1
 
 SELECT * FROM socios.rolDisponible
+
+CREATE OR ALTER PROCEDURE pagos.insertarMedioDePago
+    @idMedioDePago     INT,
+    @tipoMedioDePago   VARCHAR(50),
+    @descripcion       VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+	IF(@idMedioDePago>0)
+	BEGIN
+    INSERT INTO pagos.medioDePago (idMedioDePago, tipoMedioDePago, descripcion)
+    VALUES (@idMedioDePago, @tipoMedioDePago, @descripcion);
+	END
+END
+GO
+
+EXEC pagos.insertarMedioDePago 1,'Debito','Mastercard Debito'
+GO
+
+SELECT * FROM pagos.medioDePago
+GO
+
+CREATE OR ALTER PROCEDURE pagos.modificarMedioDePago
+    @idMedioDePago     INT,
+    @tipoMedioDePago   VARCHAR(50),
+    @descripcion       VARCHAR(50) = NULL
+AS
+BEGIN
+
+    UPDATE pagos.medioDePago
+    SET
+        descripcion = COALESCE(@descripcion, descripcion)
+    WHERE idMedioDePago   = @idMedioDePag AND (@idMedioDePago>0)
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('No se encontró medio de pago con id=%d.', 16, 1, @idMedioDePago, @tipoMedioDePago);
+END
+GO
+
+EXEC pagos.modificarMedioDePago -1, 'Credito', 'Mastercard Crédito'
+
+CREATE OR ALTER PROCEDURE pagos.eliminarMedioDePago
+    @idMedioDePago     INT,
+    @tipoMedioDePago   VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM pagos.medioDePago
+    WHERE idMedioDePago   = @idMedioDePago
+      AND tipoMedioDePago = @tipoMedioDePago
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('No se encontró medio de pago activo con id=%d y tipo="%s".', 16, 1, @idMedioDePago, @tipoMedioDePago);
+END
+GO
+
+EXEC pagos.eliminarMedioDePago 1, 'Debito'
