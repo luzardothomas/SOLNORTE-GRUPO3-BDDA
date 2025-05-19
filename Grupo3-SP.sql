@@ -279,3 +279,56 @@ BEGIN
 
 END
 GO
+
+CREATE OR ALTER PROCEDURE socios.Insertar_CategoriaSocio
+    @tipo           VARCHAR(50),
+    @costoMembresia DECIMAL(10,2)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    INSERT INTO socios.categoriaSocio (tipo, costoMembresia)
+    VALUES (@tipo, @costoMembresia);
+END
+GO
+
+EXEC socios.sp_Insertar_CategoriaSocio Cadete, 5000
+
+select * from socios.categoriaSocio
+
+CREATE PROCEDURE socios.modificar_CategoriaSocio
+    @idCategoria    INT,
+    @tipo           VARCHAR(50)     = NULL,
+    @costoMembresia DECIMAL(10,2)   = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    UPDATE socios.categoriaSocio
+    SET
+        tipo           = COALESCE(@tipo, tipo),
+        costoMembresia = COALESCE(@costoMembresia, costoMembresia)
+    WHERE idCategoria = @idCategoria
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('No se encontró categoría con id=%d.',16,1,@idCategoria);
+END
+GO
+
+EXEC socios.modificar_CategoriaSocio 1, Joven, 5500
+
+CREATE OR ALTER PROCEDURE socios.Eliminar_CategoriaSocio
+    @idCategoria INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DELETE FROM socios.categoriaSocio
+    WHERE categoriaSocio.idCategoria = @idCategoria
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('No se encontró categoría activa con id=%d.',16,1,@idCategoria);
+END
+GO
+
+EXEC socios.Eliminar_CategoriaSocio 2
