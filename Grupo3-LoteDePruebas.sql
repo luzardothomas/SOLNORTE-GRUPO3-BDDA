@@ -146,3 +146,44 @@ FROM actividades.DeporteDisponible
 -- ELIMINAR
 
 EXEC actividades.eliminarDeporteDisponible @idDeporte = 1
+
+-- ###### TABLA ACTIVIDAD RECREATIVA ######
+
+-- INSERTAR
+-- Casos Validos
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, 75.00;
+EXEC actividades.insertarActividadRecreativa 'Bochas', '08:30', '10:00', 15.00, 20.00;
+EXEC actividades.insertarActividadRecreativa 'Ajedrez', '09:00', '11:00', 20.00, 35.00;
+
+SELECT *
+FROM actividades.actividadRecreativa 
+-- Casos Invalidos
+EXEC actividades.insertarActividadRecreativa '', '18:00', '20:00', 50.00, 75.00; -- Descripción vacía
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '', '20:00', 50.00, 75.00; -- Hora de inicio vacía
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '', 50.00, 75.00; -- Hora de fin vacía
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 0, 75.00;    -- Tarifa socio inválida
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, 0;    -- Tarifa invitado inválida
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', -10, 75.00;  -- Tarifa socio negativa
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, -10;  -- Tarifa invitado negativa
+
+-- MODIFICAR
+
+-- Caso Valido
+DECLARE @idActividadModificar INT;
+SELECT @idActividadModificar = 2;
+EXEC actividades.modificarActividadRecreativa @idActividadModificar, 'Fútbol Recreativo', '13:00', '15:00', 35.00, 55.00;
+-- Casos Invalidos
+EXEC actividades.modificarActividadRecreativa 9999, 'Tenis', '10:00', '12:00', 60.00, 90.00; -- ID inexistente
+EXEC actividades.modificarActividadRecreativa 1, '', '10:00', '12:00', 60.00, 90.00;    -- Descripción vacía
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '', '12:00', 60.00, 90.00;    -- Hora inicio vacía
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '', 60.00, 90.00;    -- Hora fin vacía
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 0, 90.00;       -- Tarifa socio inválida
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 60.00, 0;       -- Tarifa invitado inválida
+
+-- ELIMINAR
+-- Caso Valido
+DECLARE @ultimaActividad INT;
+SELECT @ultimaActividad = MAX(idActividad) FROM actividades.actividadRecreativa
+EXEC actividades.eliminarActividadRecreativa @ultimaActividad;
+-- Caso Invalido
+EXEC actividades.eliminarActividadRecreativa 9999; -- ID inexistente
