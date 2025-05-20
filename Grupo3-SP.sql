@@ -677,6 +677,98 @@ BEGIN
 END;
 GO
 
+-- ###### TABLA DEPORTEACTIVO ######
+
+-- INSERTAR DEPORTE ACTIVO
+
+CREATE OR ALTER PROCEDURE actividades.insertarDeporteActivo
+    @idSocio INT,
+    @idDeporte INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+	DECLARE @estadoMembresia VARCHAR(8);
+
+    SET @estadoMembresia = (SELECT s.estadoMembresia FROM socios.socio s WHERE s.idSocio = @idSocio)
+	IF NOT (@estadoMembresia IN ('Activo','Moroso'))
+    BEGIN
+        RAISERROR('Miembro no válido.', 16, 1);
+        RETURN;
+    END;
+
+	IF NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte)
+    BEGIN
+        RAISERROR('Error: Ese deporte no existe', 16, 1);
+        RETURN;
+    END
+
+    INSERT INTO actividades.deporteActivo (idSocio, idDeporte, estadoMembresia)
+    VALUES (@idSocio, @idDeporte, @estadoMembresia);
+END;
+GO
+
+-- MODIFICAR DEPORTE ACTIVO
+
+CREATE OR ALTER PROCEDURE actividades.modificarDeporteActivo
+    @idDeporteActivo    INT,
+    @idSocio            INT = NULL,
+    @idDeporte          INT = NULL,
+    @estadoMembresia    VARCHAR(8) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Validaciones
+    IF @estadoMembresia IS NOT NULL AND NOT (@estadoMembresia IN ('Activo', 'Moroso', 'Inactivo'))
+    BEGIN
+        RAISERROR('Error: Estado de membresía debe ser Activo, Moroso o Inactivo.', 16, 1);
+        RETURN;
+    END
+
+    -- Validación existencia de socio si se quiere modificar
+    IF @idSocio IS NOT NULL AND NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+    BEGIN
+        RAISERROR('Error: El socio especificado no existe.', 16, 1);
+        RETURN;
+    END
+
+    -- Validación existencia de deporte si se quiere modificar
+    IF @idDeporte IS NOT NULL AND NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte)
+    BEGIN
+        RAISERROR('Error: El deporte especificado no existe.', 16, 1);
+        RETURN;
+    END
+
+    -- Actualización condicional
+    UPDATE actividades.deporteActivo
+    SET
+        idSocio         = COALESCE(@idSocio, idSocio),
+        idDeporte       = COALESCE(@idDeporte, idDeporte),
+        estadoMembresia = COALESCE(@estadoMembresia, estadoMembresia)
+    WHERE idDeporteActivo = @idDeporteActivo;
+
+    -- Verificación de actualización
+    IF @@ROWCOUNT = 0
+    BEGIN
+        RAISERROR('No existe una fila con idDeporteActivo = %d.', 16, 1, @idDeporteActivo);
+    END
+END;
+GO
+
+-- ELIMINAR DEPORTE ACTIVO
+
+CREATE PROCEDURE actividades.eliminarDeporteActivo
+    @idDeporteActivo INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM actividades.deporteActivo
+    WHERE idDeporteActivo = @idDeporteActivo;
+END;
+GO
+
 -- :::::::::::::::::::::::::::::::::::::::::::: ITINERARIOS ::::::::::::::::::::::::::::::::::::::::::::
 
 -- ###### TABLA ITINERARIO ######

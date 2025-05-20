@@ -188,6 +188,23 @@ EXEC actividades.eliminarActividadRecreativa @ultimaActividad;
 -- Caso Invalido
 EXEC actividades.eliminarActividadRecreativa 9999; -- ID inexistente
 
+-- ###### TABLA DEPORTEACTIVO ######
+
+-- INSERTAR
+
+EXEC actividades.insertarDeporteActivo @idSocio = 1, @idDeporte = 1
+SELECT * FROM actividades.deporteActivo
+
+-- MODIFICAR
+
+EXEC actividades.modificarDeporteActivo @idDeporteActivo = 1, @idSocio = 1, @estadoMembresia = 'Activo';
+SELECT * FROM actividades.deporteActivo
+
+-- ELIMINAR
+
+EXEC actividades.eliminarDeporteActivo @idDeporteActivo = 1
+SELECT * FROM actividades.deporteActivo
+
 -- :::::::::::::::::::::::::::::::::::::::::::: ITINERARIOS ::::::::::::::::::::::::::::::::::::::::::::
 
 -- ###### TABLA ITINERARIO ######
