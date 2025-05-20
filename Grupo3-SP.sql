@@ -549,3 +549,130 @@ BEGIN
 	
 END
 GO
+
+-- ###### TABLA ACTIVIDAD RECREATIVA ######
+
+--Insertar Actividad Recreativa
+CREATE PROCEDURE actividades.insertarActividadRecreativa (
+    @descripcion VARCHAR(50),
+    @horaInicio VARCHAR(50),
+    @horaFin VARCHAR(50),
+    @tarifaSocio DECIMAL(10, 2),
+    @tarifaInvitado DECIMAL(10, 2)
+)
+AS
+BEGIN
+    IF @descripcion IS NULL OR @descripcion = ''
+    BEGIN
+        RAISERROR('La descripción de la actividad no puede estar vacía.', 16, 1);
+        RETURN;
+    END
+    IF @horaInicio IS NULL OR @horaInicio = ''
+    BEGIN
+        RAISERROR('La hora de inicio de la actividad no puede estar vacía.', 16, 1);
+        RETURN;
+    END
+    IF @horaFin IS NULL OR @horaFin = ''
+    BEGIN
+        RAISERROR('La hora de fin de la actividad no puede estar vacía.', 16, 1);
+        RETURN;
+    END
+    IF @tarifaSocio IS NULL OR @tarifaSocio <= 0
+    BEGIN
+        RAISERROR('La tarifa para socios debe ser mayor que cero.', 16, 1);
+        RETURN;
+    END
+    IF @tarifaInvitado IS NULL OR @tarifaInvitado <= 0
+    BEGIN
+        RAISERROR('La tarifa para invitados debe ser mayor que cero.', 16, 1);
+        RETURN;
+    END
+
+    -- Inserción de la actividad
+    INSERT INTO actividades.actividadRecreativa (descripcion, horaInicio, horaFin, tarifaSocio, tarifaInvitado)
+    VALUES (@descripcion, @horaInicio, @horaFin, @tarifaSocio, @tarifaInvitado);
+
+    SELECT SCOPE_IDENTITY() AS idActividadInsertada; -- Esta sentencia lo que hace es devolver el ID de la actividad insertada
+END;
+GO
+
+-- Modificar Actividad Recreativa
+CREATE PROCEDURE actividades.modificarActividadRecreativa (
+    @idActividad INT,
+    @descripcion VARCHAR(50),
+    @horaInicio VARCHAR(50),
+    @horaFin VARCHAR(50),
+    @tarifaSocio DECIMAL(10, 2),
+    @tarifaInvitado DECIMAL(10, 2)
+)
+AS
+BEGIN
+    IF @idActividad IS NULL OR @idActividad <= 0
+    BEGIN
+        RAISERROR('El ID de la actividad debe ser un valor positivo.', 16, 1);
+        RETURN;
+    END
+    IF @descripcion IS NULL OR @descripcion = ''
+    BEGIN
+        RAISERROR('La descripción de la actividad no puede estar vacía.', 16, 1);
+        RETURN;
+    END
+    IF @horaInicio IS NULL OR @horaInicio = ''
+    BEGIN
+        RAISERROR('La hora de inicio de la actividad no puede estar vacía.', 16, 1);
+        RETURN;
+    END
+    IF @horaFin IS NULL OR @horaFin = ''
+    BEGIN
+        RAISERROR('La hora de fin de la actividad no puede estar vacía.', 16, 1);
+        RETURN;
+    END
+    IF @tarifaSocio IS NULL OR @tarifaSocio <= 0
+    BEGIN
+        RAISERROR('La tarifa para socios debe ser mayor que cero.', 16, 1);
+        RETURN;
+    END
+    IF @tarifaInvitado IS NULL OR @tarifaInvitado <= 0
+    BEGIN
+        RAISERROR('La tarifa para invitados debe ser mayor que cero.', 16, 1);
+        RETURN;
+    END
+    -- Actualización de la actividad
+    UPDATE actividades.actividadRecreativa
+    SET descripcion = @descripcion,
+        horaInicio = @horaInicio,
+        horaFin = @horaFin,
+        tarifaSocio = @tarifaSocio,
+        tarifaInvitado = @tarifaInvitado
+    WHERE idActividad = @idActividad;
+    -- Verificar si se actualizó alguna fila
+    IF @@ROWCOUNT = 0
+    BEGIN
+        RAISERROR('No se encontró ninguna actividad con el ID especificado.', 16, 1);
+        RETURN;
+    END
+END;
+GO
+
+-- Eliminar Actividad Recreativa
+CREATE PROCEDURE actividades.eliminarActividadRecreativa (
+    @idActividad INT
+)
+AS
+BEGIN
+    IF @idActividad IS NULL OR @idActividad <= 0
+    BEGIN
+        RAISERROR('El ID de la actividad debe ser un valor positivo.', 16, 1);
+        RETURN;
+    END
+    -- Eliminación de la actividad
+    DELETE FROM actividades.actividadRecreativa
+    WHERE idActividad = @idActividad;
+    
+    IF @@ROWCOUNT = 0
+    BEGIN
+        RAISERROR('No se encontró ninguna actividad con el ID especificado.', 16, 1);
+        RETURN;
+    END
+END;
+GO
