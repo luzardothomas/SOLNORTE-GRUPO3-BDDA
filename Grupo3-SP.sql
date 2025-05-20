@@ -282,6 +282,143 @@ BEGIN
 END
 GO
 
+-- ###### TABLA TUTORACARGO
+
+-- INSERTAR TUTOR A CARGO
+CREATE OR ALTER PROCEDURE socios.insertarTutorACargo  
+    @dniTutor BIGINT,  
+    @nombre VARCHAR(100),  
+    @apellido VARCHAR(100),  
+    @email VARCHAR(100) = NULL,  
+    @telefono VARCHAR(11) = NULL,  
+    @parentescoConMenor VARCHAR(10) = NULL  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    -- Validaciones  
+    IF @dniTutor <= 0  
+    BEGIN  
+        RAISERROR('El DNI del tutor debe ser mayor a 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF LEN(@nombre) = 0 OR LEN(@nombre) > 100  
+    BEGIN  
+        RAISERROR('El nombre debe tener entre 1 y 100 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF LEN(@apellido) = 0 OR LEN(@apellido) > 100  
+    BEGIN  
+        RAISERROR('El apellido debe tener entre 1 y 100 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @email IS NOT NULL AND LEN(@email) > 100  
+    BEGIN  
+        RAISERROR('El email no debe superar los 100 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @telefono IS NOT NULL AND LEN(@telefono) > 11  
+    BEGIN  
+        RAISERROR('El teléfono no debe superar los 11 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @parentescoConMenor IS NOT NULL AND LEN(@parentescoConMenor) > 10  
+    BEGIN  
+        RAISERROR('El parentesco no debe superar los 10 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    INSERT INTO socios.tutorACargo (dniTutor, nombre, apellido, email, telefono, parentescoConMenor)  
+    VALUES (@dniTutor, @nombre, @apellido, @email, @telefono, @parentescoConMenor);  
+END;  
+GO  
+
+-- MODIFICAR TUTOR A CARGO 
+CREATE OR ALTER PROCEDURE socios.modificarTutorACargo  
+    @dniTutor BIGINT,  
+    @nombre VARCHAR(100) = NULL,  
+    @apellido VARCHAR(100) = NULL,  
+    @email VARCHAR(100) = NULL,  
+    @telefono VARCHAR(11) = NULL,  
+    @parentescoConMenor VARCHAR(10) = NULL  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    -- Validaciones  
+    IF @dniTutor <= 0  
+    BEGIN  
+        RAISERROR('El DNI del tutor debe ser mayor a 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @nombre IS NOT NULL AND (LEN(@nombre) = 0 OR LEN(@nombre) > 100)  
+    BEGIN  
+        RAISERROR('El nombre debe tener entre 1 y 100 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @apellido IS NOT NULL AND (LEN(@apellido) = 0 OR LEN(@apellido) > 100)  
+    BEGIN  
+        RAISERROR('El apellido debe tener entre 1 y 100 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @email IS NOT NULL AND LEN(@email) > 100  
+    BEGIN  
+        RAISERROR('El email no debe superar los 100 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @telefono IS NOT NULL AND LEN(@telefono) > 11  
+    BEGIN  
+        RAISERROR('El teléfono no debe superar los 11 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @parentescoConMenor IS NOT NULL AND LEN(@parentescoConMenor) > 10  
+    BEGIN  
+        RAISERROR('El parentesco no debe superar los 10 caracteres.', 16, 1);  
+        RETURN;  
+    END  
+
+    UPDATE socios.tutorACargo  
+    SET  
+        nombre = COALESCE(@nombre, nombre),  
+        apellido = COALESCE(@apellido, apellido),  
+        email = COALESCE(@email, email),  
+        telefono = COALESCE(@telefono, telefono),  
+        parentescoConMenor = COALESCE(@parentescoConMenor, parentescoConMenor)  
+    WHERE dniTutor = @dniTutor;  
+
+    IF @@ROWCOUNT = 0  
+    BEGIN  
+        RAISERROR('No existe tutorACargo con dniTutor = %d.', 16, 1, @dniTutor);  
+    END  
+END;  
+GO  
+
+-- ELIMINAR TUTOR A CARGO  
+CREATE OR ALTER PROCEDURE socios.eliminarTutorACargo  
+    @dniTutor BIGINT  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    DELETE FROM socios.tutorACargo  
+    WHERE dniTutor = @dniTutor;  
+
+    IF @@ROWCOUNT = 0  
+    BEGIN  
+        RAISERROR('No existe tutorACargo con dniTutor = %d.', 16, 1, @dniTutor);  
+    END  
+END;  
+GO  
 
 -- ###### TABLA CATEGORIASSOCIO ######
 
@@ -391,6 +528,388 @@ BEGIN
         RAISERROR('No se encontró rol activo con id=%d.', 16, 1, @idRol);
 END
 GO
+
+-- ###### TABLA ROLVIGENTE
+
+-- INSERTAR ROL VIGENTE
+CREATE OR ALTER PROCEDURE socios.insertarRolVigente  
+    @idRol INT,  
+    @idSocio INT  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    -- Validaciones  
+    IF @idRol <= 0  
+    BEGIN  
+        RAISERROR('idRol debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @idSocio <= 0  
+    BEGIN  
+        RAISERROR('idSocio debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    -- Insertar  
+    BEGIN TRY
+        INSERT INTO socios.rolVigente (idRol, idSocio)  
+        VALUES (@idRol, @idSocio);  
+    END TRY
+    BEGIN CATCH
+        RAISERROR('Error al insertar. Puede que la clave primaria ya exista o las claves foráneas no sean válidas.', 16, 1);
+        RETURN;
+    END CATCH
+END;  
+GO  
+
+-- MODIFICAR ROL VIGENTE
+CREATE OR ALTER PROCEDURE socios.modificarRolVigente  
+    @idRol INT,  
+    @idSocio INT,  
+    @nuevoIdRol INT = NULL,  
+    @nuevoIdSocio INT = NULL  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    IF (@nuevoIdRol IS NOT NULL AND @nuevoIdRol <= 0)  
+    BEGIN  
+        RAISERROR('nuevoIdRol debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF (@nuevoIdSocio IS NOT NULL AND @nuevoIdSocio <= 0)  
+    BEGIN  
+        RAISERROR('nuevoIdSocio debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    UPDATE socios.rolVigente  
+    SET  
+        idRol = COALESCE(@nuevoIdRol, idRol),  
+        idSocio = COALESCE(@nuevoIdSocio, idSocio)  
+    WHERE idRol = @idRol AND idSocio = @idSocio;  
+
+    IF @@ROWCOUNT = 0  
+    BEGIN  
+        RAISERROR('No existe rolVigente con idRol = %d e idSocio = %d.', 16, 1, @idRol, @idSocio);  
+    END  
+END;  
+GO  
+
+-- ELIMINAR  ROL VIGENTE
+CREATE OR ALTER PROCEDURE socios.eliminarRolVigente  
+    @idRol INT,  
+    @idSocio INT  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    DELETE FROM socios.rolVigente  
+    WHERE idRol = @idRol AND idSocio = @idSocio;  
+
+    IF @@ROWCOUNT = 0  
+    BEGIN  
+        RAISERROR('No existe rolVigente con idRol = %d e idSocio = %d.', 16, 1, @idRol, @idSocio);  
+    END  
+END;  
+GO  
+
+-- :::::::::::::::::::::::::::::::::::::::::::: PAGOS ::::::::::::::::::::::::::::::::::::::::::::
+
+-- ###### TABLA FACTURACOBRO
+
+-- INSERTAR FACTURA 
+CREATE OR ALTER PROCEDURE pagos.insertarFacturaCobro  
+    @idSocio INT = NULL,  
+    @fechaEmision DATE = NULL,  -- opcional, usa default si NULL  
+    @fechaPrimerVencimiento DATE,  
+    @fechaSegundoVencimiento DATE,  
+    @cuitDeudor INT,  
+    @idMedioDePago INT,  
+    @tipoMedioDePago VARCHAR(50),  
+    @direccion VARCHAR(100),  
+    @tipoCobro VARCHAR(25),  
+    @numeroCuota INT,  
+    @servicioPagado VARCHAR(50),  
+    @importeBruto DECIMAL(10,2),  
+    @importeTotal DECIMAL(10,2)  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    -- Validaciones básicas  
+    IF @fechaPrimerVencimiento IS NULL OR @fechaSegundoVencimiento IS NULL  
+    BEGIN  
+        RAISERROR('Las fechas de vencimiento no pueden ser NULL.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @fechaSegundoVencimiento < @fechaPrimerVencimiento  
+    BEGIN  
+        RAISERROR('La fecha de segundo vencimiento debe ser igual o mayor a la fecha de primer vencimiento.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @cuitDeudor <= 0  
+    BEGIN  
+        RAISERROR('cuitDeudor debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @idMedioDePago <= 0  
+    BEGIN  
+        RAISERROR('idMedioDePago debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @numeroCuota <= 0  
+    BEGIN  
+        RAISERROR('numeroCuota debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @importeBruto <= 0  
+    BEGIN  
+        RAISERROR('importeBruto debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @importeTotal <= 0  
+    BEGIN  
+        RAISERROR('importeTotal debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @tipoMedioDePago IS NULL OR LEN(@tipoMedioDePago) = 0  
+    BEGIN  
+        RAISERROR('tipoMedioDePago no puede ser vacío.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @direccion IS NULL OR LEN(@direccion) = 0  
+    BEGIN  
+        RAISERROR('direccion no puede ser vacía.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @tipoCobro IS NULL OR LEN(@tipoCobro) = 0  
+    BEGIN  
+        RAISERROR('tipoCobro no puede ser vacío.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @servicioPagado IS NULL OR LEN(@servicioPagado) = 0  
+    BEGIN  
+        RAISERROR('servicioPagado no puede ser vacío.', 16, 1);  
+        RETURN;  
+    END  
+
+    -- Insertar  
+    INSERT INTO pagos.facturaCobro  
+    (idSocio, fechaEmision, fechaPrimerVencimiento, fechaSegundoVencimiento, cuitDeudor, idMedioDePago, tipoMedioDePago, direccion, tipoCobro, numeroCuota, servicioPagado, importeBruto, importeTotal)  
+    VALUES  
+    (@idSocio, COALESCE(@fechaEmision, CAST(GETDATE() AS DATE)), @fechaPrimerVencimiento, @fechaSegundoVencimiento, @cuitDeudor, @idMedioDePago, @tipoMedioDePago, @direccion, @tipoCobro, @numeroCuota, @servicioPagado, @importeBruto, @importeTotal);  
+END;  
+GO  
+
+-- MODIFICAR FACTURA
+CREATE OR ALTER PROCEDURE pagos.modificarFacturaCobro  
+    @idFactura INT,  
+    @idSocio INT = NULL,  
+    @fechaEmision DATE = NULL,  
+    @fechaPrimerVencimiento DATE = NULL,  
+    @fechaSegundoVencimiento DATE = NULL,  
+    @cuitDeudor INT = NULL,  
+    @idMedioDePago INT = NULL,  
+    @tipoMedioDePago VARCHAR(50) = NULL,  
+    @direccion VARCHAR(100) = NULL,  
+    @tipoCobro VARCHAR(25) = NULL,  
+    @numeroCuota INT = NULL,  
+    @servicioPagado VARCHAR(50) = NULL,  
+    @importeBruto DECIMAL(10,2) = NULL,  
+    @importeTotal DECIMAL(10,2) = NULL  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    -- Validaciones si llegan parámetros  
+    IF (@fechaPrimerVencimiento IS NOT NULL AND @fechaSegundoVencimiento IS NOT NULL AND @fechaSegundoVencimiento < @fechaPrimerVencimiento)  
+    BEGIN  
+        RAISERROR('La fecha de segundo vencimiento debe ser igual o mayor a la fecha de primer vencimiento.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF (@cuitDeudor IS NOT NULL AND @cuitDeudor <= 0)  
+    BEGIN  
+        RAISERROR('cuitDeudor debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF (@idMedioDePago IS NOT NULL AND @idMedioDePago <= 0)  
+    BEGIN  
+        RAISERROR('idMedioDePago debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF (@numeroCuota IS NOT NULL AND @numeroCuota <= 0)  
+    BEGIN  
+        RAISERROR('numeroCuota debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF (@importeBruto IS NOT NULL AND @importeBruto <= 0)  
+    BEGIN  
+        RAISERROR('importeBruto debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF (@importeTotal IS NOT NULL AND @importeTotal <= 0)  
+    BEGIN  
+        RAISERROR('importeTotal debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    UPDATE pagos.facturaCobro  
+    SET  
+        idSocio = COALESCE(@idSocio, idSocio),  
+        fechaEmision = COALESCE(@fechaEmision, fechaEmision),  
+        fechaPrimerVencimiento = COALESCE(@fechaPrimerVencimiento, fechaPrimerVencimiento),  
+        fechaSegundoVencimiento = COALESCE(@fechaSegundoVencimiento, fechaSegundoVencimiento),  
+        cuitDeudor = COALESCE(@cuitDeudor, cuitDeudor),  
+        idMedioDePago = COALESCE(@idMedioDePago, idMedioDePago),  
+        tipoMedioDePago = COALESCE(@tipoMedioDePago, tipoMedioDePago),  
+        direccion = COALESCE(@direccion, direccion),  
+        tipoCobro = COALESCE(@tipoCobro, tipoCobro),  
+        numeroCuota = COALESCE(@numeroCuota, numeroCuota),  
+        servicioPagado = COALESCE(@servicioPagado, servicioPagado),  
+        importeBruto = COALESCE(@importeBruto, importeBruto),  
+        importeTotal = COALESCE(@importeTotal, importeTotal)  
+    WHERE idFactura = @idFactura;  
+
+    IF @@ROWCOUNT = 0  
+    BEGIN  
+        RAISERROR('No existe facturaCobro con idFactura = %d.', 16, 1, @idFactura);  
+    END  
+END;  
+GO  
+
+-- ELIMINAR FACTURA
+CREATE OR ALTER PROCEDURE pagos.eliminarFacturaCobro  
+    @idFactura INT  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    DELETE FROM pagos.facturaCobro  
+    WHERE idFactura = @idFactura;  
+
+    IF @@ROWCOUNT = 0  
+    BEGIN  
+        RAISERROR('No existe facturaCobro con idFactura = %d.', 16, 1, @idFactura);  
+    END  
+END;  
+GO  
+
+-- ###### TABLA REEMBOLSO
+
+
+-- INSERTAR REEMBOLSO
+CREATE OR ALTER PROCEDURE pagos.insertarReembolso  
+    @idFacturaOriginal INT,  
+    @montoReembolsado DECIMAL(10,2),  
+    @cuitDestinatario BIGINT,  
+    @medioDePago VARCHAR(50)  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    -- Validaciones  
+    IF @idFacturaOriginal <= 0  
+    BEGIN  
+        RAISERROR('idFacturaOriginal debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @montoReembolsado <= 0  
+    BEGIN  
+        RAISERROR('montoReembolsado debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @cuitDestinatario <= 0  
+    BEGIN  
+        RAISERROR('cuitDestinatario debe ser mayor que 0.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF @medioDePago IS NULL OR LEN(@medioDePago) = 0  
+    BEGIN  
+        RAISERROR('medioDePago no puede ser vacío.', 16, 1);  
+        RETURN;  
+    END  
+
+    INSERT INTO pagos.reembolso (idFacturaOriginal, montoReembolsado, cuitDestinatario, medioDePago)  
+    VALUES (@idFacturaOriginal, @montoReembolsado, @cuitDestinatario, @medioDePago);  
+END;  
+GO  
+
+-- MODIFICAR REEMBOLSO  
+CREATE OR ALTER PROCEDURE pagos.modificarReembolso  
+    @idFacturaReembolso INT,  
+    @idFacturaOriginal INT,  
+    @montoReembolsado DECIMAL(10,2) = NULL,  
+    @cuitDestinatario BIGINT = NULL,  
+    @medioDePago VARCHAR(50) = NULL  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    IF (@montoReembolsado IS NOT NULL AND @montoReembolsado <= 0)  
+    BEGIN  
+        RAISERROR('montoReembolsado debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    IF (@cuitDestinatario IS NOT NULL AND @cuitDestinatario <= 0)  
+    BEGIN  
+        RAISERROR('cuitDestinatario debe ser mayor que 0 si se especifica.', 16, 1);  
+        RETURN;  
+    END  
+
+    UPDATE pagos.reembolso  
+    SET  
+        montoReembolsado = COALESCE(@montoReembolsado, montoReembolsado),  
+        cuitDestinatario = COALESCE(@cuitDestinatario, cuitDestinatario),  
+        medioDePago = COALESCE(@medioDePago, medioDePago)  
+    WHERE idFacturaReembolso = @idFacturaReembolso AND idFacturaOriginal = @idFacturaOriginal;  
+
+    IF @@ROWCOUNT = 0  
+    BEGIN  
+        RAISERROR('No existe reembolso con idFacturaReembolso = %d e idFacturaOriginal = %d.', 16, 1, @idFacturaReembolso, @idFacturaOriginal);  
+    END  
+END;  
+GO  
+
+-- ELIMINAR REEMBOLSO
+CREATE OR ALTER PROCEDURE pagos.eliminarReembolso  
+    @idFacturaReembolso INT,  
+    @idFacturaOriginal INT  
+AS  
+BEGIN  
+    SET NOCOUNT ON;  
+
+    DELETE FROM pagos.reembolso  
+    WHERE idFacturaReembolso = @idFacturaReembolso AND idFacturaOriginal = @idFacturaOriginal;  
+
+    IF @@ROWCOUNT = 0  
+    BEGIN  
+        RAISERROR('No existe reembolso con idFacturaReembolso = %d e idFacturaOriginal = %d.', 16, 1, @idFacturaReembolso, @idFacturaOriginal);  
+    END  
+END;  
+GO  
 
 -- ###### TABLA MEDIODEPAGO ######
 

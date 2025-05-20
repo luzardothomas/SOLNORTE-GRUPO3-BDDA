@@ -3,23 +3,23 @@ GO
 
 -- Eliminar todas las tablas
 
-DROP TABLE itinerarios.itinerario
-DROP TABLE actividades.actividadRecreativa
-DROP TABLE actividades.deporteActivo
-DROP TABLE actividades.deporteDisponible
-DROP TABLE descuentos.descuentoVigente
-DROP TABLE descuentos.descuentoDisponible
-DROP TABLE socios.tutorACargo
-DROP TABLE socios.categoriaSocio
-DROP TABLE coberturas.prepagaEnUso
-DROP TABLE coberturas.coberturaDisponible
-DROP TABLE pagos.reembolso
-DROP TABLE pagos.facturaCobro
-DROP TABLE pagos.medioEnUso
-DROP TABLE pagos.medioDePago
-DROP TABLE socios.rolVigente
-DROP TABLE socios.rolDisponible
-DROP TABLE socios.socio
+--DROP TABLE itinerarios.itinerario
+--DROP TABLE actividades.actividadRecreativa
+--DROP TABLE actividades.deporteActivo
+--DROP TABLE actividades.deporteDisponible
+--DROP TABLE descuentos.descuentoVigente
+--DROP TABLE descuentos.descuentoDisponible
+--DROP TABLE socios.tutorACargo
+--DROP TABLE socios.categoriaSocio
+--DROP TABLE coberturas.prepagaEnUso
+--DROP TABLE coberturas.coberturaDisponible
+--DROP TABLE pagos.reembolso
+--DROP TABLE pagos.facturaCobro
+--DROP TABLE pagos.medioEnUso
+--DROP TABLE pagos.medioDePago
+--DROP TABLE socios.rolVigente
+--DROP TABLE socios.rolDisponible
+--DROP TABLE socios.socio
 
 -- :::::::::::::::::::::::::::::::::::::::::::: SOCIOS ::::::::::::::::::::::::::::::::::::::::::::
 
@@ -47,7 +47,6 @@ EXEC socios.insertarSocio 11789012, 20117890127, 'Fernando', 'Castro', 'fernando
 EXEC socios.insertarSocio 11890123, 20118901238, 'Elena', 'Acosta', 'elena.acosta@gmail.com', '1101234567', '1993-12-21', '2028-01-01', '1109900112', 'eacosta', 'clave123', 'Activo', 700.00
 EXEC socios.insertarSocio 11901234, 20119012349, 'Gabriel', 'Cruz', 'gabriel.cruz@hotmail.com', '1112345678', '1981-08-08', '2028-01-01', '1111011223', 'gcruz', 'clave123', 'Activo', 800.00
 EXEC socios.insertarSocio 12012345, 20120123450, 'Florencia', 'Herrera', 'florencia.herrera@gmail.com', '1123456789', '1997-02-05', '2028-01-01', '1122122334', 'fherrera', 'clave123', 'Activo', 900.00
-
 
 SELECT TOP 20 *
 FROM socios.socio s 
@@ -105,6 +104,79 @@ SELECT * FROM socios.rolDisponible
 
 EXEC socios.eliminarRolDisponible 1
 SELECT * FROM socios.rolDisponible
+
+-- ###### TABLA ROLVIGENTE
+
+-- INSERTAR ROL VIGENTE
+
+EXEC socios.insertarRolVigente
+    @idRol = 2,
+    @idSocio = 101;
+
+-- MODIFICAR ROL VIGENTE
+
+EXEC socios.modificarRolVigente
+    @idRol = 2,
+    @idSocio = 101,
+    @nuevoIdRol = 3,
+    @nuevoIdSocio = 101;
+
+-- ELIMINAR ROL VIGENTE
+
+EXEC socios.eliminarRolVigente
+    @idRol = 3,
+    @idSocio = 101;
+
+-- :::::::::::::::::::::::::::::::::::::::::::: PAGOS ::::::::::::::::::::::::::::::::::::::::::::
+
+-- ###### TABLA FACTURACOBRO
+
+EXEC pagos.insertarFacturaCobro
+    @idSocio = 101,
+    @fechaEmision = '2025-05-20',
+    @fechaPrimerVencimiento = '2025-06-01',
+    @fechaSegundoVencimiento = '2025-06-10',
+    @cuitDeudor = 20304050607,
+    @idMedioDePago = 2,
+    @tipoMedioDePago = 'Transferencia',
+    @direccion = 'Calle Falsa 123',
+    @tipoCobro = 'Mensual',
+    @numeroCuota = 1,
+    @servicioPagado = 'Servicio A',
+    @importeBruto = 5000.00,
+    @importeTotal = 5500.00;
+
+EXEC pagos.modificarFacturaCobro
+    @idFactura = 10,
+    @importeTotal = 5600.00,
+    @direccion = 'Nueva Dirección 456';
+
+EXEC pagos.eliminarFacturaCobro
+    @idFactura = 10;
+
+-- ###### TABLA REEMBOLSO
+
+-- INSERTAR REEMBOLSO
+
+EXEC pagos.insertarReembolso
+    @idFacturaOriginal = 10,
+    @montoReembolsado = 1000.00,
+    @cuitDestinatario = 30111222333,
+    @medioDePago = 'Cheque';
+
+-- MODIFICAR REEMBOLSO
+
+EXEC pagos.modificarReembolso
+    @idFacturaReembolso = 5,
+    @idFacturaOriginal = 10,
+    @montoReembolsado = 1200.00,
+    @medioDePago = 'Transferencia';
+
+-- ELIMINAR REEMBOLSO
+
+EXEC pagos.eliminarReembolso
+    @idFacturaReembolso = 5,
+    @idFacturaOriginal = 10;
 
 -- ###### TABLA MEDIODEPAGO ######
 
