@@ -676,3 +676,108 @@ BEGIN
     END
 END;
 GO
+
+-- :::::::::::::::::::::::::::::::::::::::::::: ITINERARIOS ::::::::::::::::::::::::::::::::::::::::::::
+
+-- ###### TABLA ITINERARIO ######
+
+-- INSERTAR ITINERARIO
+
+CREATE OR ALTER PROCEDURE itinerarios.insertarItinerario
+    @dia VARCHAR(9),
+    @idDeporte INT,
+    @horaInicio TIME,
+    @horaFin TIME
+AS
+BEGIN
+    IF NOT (LEN(@dia) >= 5 AND LEN(@dia) <= 9)
+    BEGIN
+        RAISERROR('Error: El día de la semana debe tener entre 5 y 9 letras', 16, 1);
+        RETURN;
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte)
+    BEGIN
+        RAISERROR('Error: Ese deporte no existe', 16, 1);
+        RETURN;
+    END
+    IF @horaInicio >= @horaFin
+    BEGIN
+        RAISERROR('Error: La hora de inicio debe ser menor que la hora de fin', 16, 1);
+        RETURN;
+    END
+
+    -- Inserción válida
+    INSERT INTO itinerarios.itinerario (dia, idDeporte, horaInicio, horaFin)
+    VALUES (@dia, @idDeporte, @horaInicio, @horaFin);
+END;
+GO
+
+-- MODIFICAR ITINERARIO
+
+CREATE OR ALTER PROCEDURE itinerarios.modificarItinerario
+    @idItinerario INT,
+    @dia VARCHAR(9) = NULL,
+    @idDeporte INT = NULL,
+    @horaInicio TIME = NULL,
+    @horaFin TIME = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Validar día
+    IF @dia IS NOT NULL AND NOT (LEN(@dia) >= 5 AND LEN(@dia) <= 9)
+    BEGIN
+        RAISERROR('Error: El día de la semana debe tener entre 5 y 9 letras', 16, 1);
+        RETURN;
+    END
+
+    -- Validar existencia de deporte
+    IF @idDeporte IS NOT NULL AND NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte)
+    BEGIN
+        RAISERROR('Error: Ese deporte no existe', 16, 1);
+        RETURN;
+    END
+
+    -- Validar que horaInicio < horaFin
+    IF @horaInicio IS NOT NULL AND @horaFin IS NOT NULL AND @horaInicio >= @horaFin
+    BEGIN
+        RAISERROR('Error: La hora de inicio debe ser menor que la hora de fin', 16, 1);
+        RETURN;
+    END
+
+    -- Actualizar valores
+    UPDATE itinerarios.itinerario
+    SET
+        dia = COALESCE(@dia, dia),
+        idDeporte = COALESCE(@idDeporte, idDeporte),
+        horaInicio = COALESCE(@horaInicio, horaInicio),
+        horaFin = COALESCE(@horaFin, horaFin)
+    WHERE idItinerario = @idItinerario;
+
+    -- Validar si se actualizó alguna fila
+    IF @@ROWCOUNT = 0
+    BEGIN
+        RAISERROR('No existe un itinerario con idItinerario = %d.', 16, 1, @idItinerario);
+    END
+END;
+GO
+
+-- ELIMINAR ITINERARIO
+
+CREATE OR ALTER PROCEDURE itinerarios.eliminarItinerario
+    @idItinerario INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+	DELETE FROM itinerarios.itinerario
+	WHERE @idItinerario = @idItinerario;
+    
+	IF @@ROWCOUNT = 0
+	BEGIN
+		RAISERROR('No se encontró ningún itinerario con id = %d', 16, 1, @idItinerario);
+	END
+	
+END
+GO

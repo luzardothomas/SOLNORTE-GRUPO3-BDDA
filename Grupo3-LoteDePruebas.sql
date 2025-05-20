@@ -187,3 +187,28 @@ SELECT @ultimaActividad = MAX(idActividad) FROM actividades.actividadRecreativa
 EXEC actividades.eliminarActividadRecreativa @ultimaActividad;
 -- Caso Invalido
 EXEC actividades.eliminarActividadRecreativa 9999; -- ID inexistente
+
+-- :::::::::::::::::::::::::::::::::::::::::::: ITINERARIOS ::::::::::::::::::::::::::::::::::::::::::::
+
+-- ###### TABLA ITINERARIO ######
+
+-- INSERTAR
+
+EXEC itinerarios.insertarItinerario @dia = 'Lunes', @idDeporte = 1, @horaInicio = '08:00', @horaFin = '10:00';
+
+SELECT *
+FROM itinerarios.itinerario
+
+-- MODIFICAR
+
+EXEC itinerarios.modificarItinerario @idItinerario = 1, @horaFin = '11:30';
+
+SELECT *
+FROM itinerarios.itinerario
+
+-- ELIMINAR
+
+EXEC itinerarios.eliminarItinerario @idItinerario = 1;
+
+SELECT *
+FROM itinerarios.itinerario
