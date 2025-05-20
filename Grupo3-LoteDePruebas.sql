@@ -23,6 +23,8 @@ DROP TABLE socios.socio
 
 -- :::::::::::::::::::::::::::::::::::::::::::: SOCIOS ::::::::::::::::::::::::::::::::::::::::::::
 
+-- ###### TABLA SOCIO ###### 
+
 -- INSERTAR
 
 EXEC socios.insertarSocio 10123456, 20101234561, 'Juan', 'Pérez', 'juan.perez@gmail.com', '1134567890', '1985-04-12', '2028-01-01', '1122334455', 'jperez', 'clave123', 'Activo', 0.00
@@ -69,3 +71,78 @@ EXEC socios.eliminarSocio @idSocio = 5
 
 SELECT TOP 5 *
 FROM socios.socio
+
+-- ###### TABLA CATEGORIASSOCIO ######
+
+-- INSERTAR
+
+EXEC socios.insertarCategoriaSocio Cadete, 5000
+SELECT * FROM socios.categoriaSocio
+
+-- MODIFICAR
+
+EXEC socios.modificarCategoriaSocio 1, Joven, 5500
+SELECT * FROM socios.categoriaSocio
+
+-- ELIMINAR
+EXEC socios.eliminarCategoriaSocio 2
+SELECT * FROM socios.categoriaSocio
+
+
+-- ###### TABLA ROLDISPONIBLE ######
+
+-- INSERTAR
+
+EXEC socios.insertarRolDisponible 1, Administrador
+SELECT * FROM socios.rolDisponible
+
+-- MODIFICAR
+
+EXEC socios.modificarRolDisponible 1, 'Mate sin Azucar'
+SELECT * FROM socios.rolDisponible
+
+-- ELIMINAR
+
+EXEC socios.eliminarRolDisponible 1
+SELECT * FROM socios.rolDisponible
+
+-- ###### TABLA MEDIODEPAGO ######
+
+-- INSERTAR
+
+EXEC pagos.insertarMedioDePago 1,'Debito','Mastercard Debito'
+SELECT * FROM pagos.medioDePago
+
+-- MODIFICAR
+
+EXEC pagos.modificarMedioDePago -1, 'Credito', 'Mastercard Crédito'
+SELECT * FROM pagos.medioDePago
+
+-- ELIMINAR
+
+EXEC pagos.eliminarMedioDePago 1, 'Debito'
+SELECT * FROM pagos.medioDePago
+
+-- :::::::::::::::::::::::::::::::::::::::::::: ACTIVIDADES ::::::::::::::::::::::::::::::::::::::::::::
+
+-- ###### TABLA DEPORTEDISPONIBLE ######
+
+-- INSERTAR
+
+EXEC actividades.insertarDeporteDisponible 'Fútbol', 'Fútbol 5', 1500.00;
+EXEC actividades.insertarDeporteDisponible 'Basquet', 'Cancha profesional', 1500.00;
+EXEC actividades.insertarDeporteDisponible 'Tenis', 'Cancha ladrillo', 1500.00;
+
+SELECT TOP 3 *
+FROM actividades.DeporteDisponible
+
+-- MODIFICAR
+
+EXEC actividades.modificarDeporteDisponible @idDeporte = 1, @tipo = 'Kickboxing',@descripcion = 'Cuadrilatero',@costoPorMes = 1250.25;
+
+SELECT TOP 3 *
+FROM actividades.DeporteDisponible
+
+-- ELIMINAR
+
+EXEC actividades.eliminarDeporteDisponible @idDeporte = 1

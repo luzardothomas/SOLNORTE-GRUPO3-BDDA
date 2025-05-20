@@ -3,6 +3,8 @@ GO
 
 -- :::::::::::::::::::::::::::::::::::::::::::: SOCIOS ::::::::::::::::::::::::::::::::::::::::::::
 
+-- ###### TABLA SOCIO ######
+
 -- INSERTAR SOCIO
 
 CREATE OR ALTER PROCEDURE socios.insertarSocio
@@ -281,7 +283,9 @@ END
 GO
 
 
---INSERTAR CATEGORÍA DE SOCIO
+-- ###### TABLA CATEGORIASSOCIO ######
+
+-- INSERTAR CATEGORIAS DE SOCIO
 
 CREATE OR ALTER PROCEDURE socios.insertarCategoriaSocio
     @tipo           VARCHAR(50),
@@ -297,11 +301,7 @@ BEGIN
 END
 GO
 
-EXEC socios.insertarCategoriaSocio Cadete, 5000
-
-select * from socios.categoriaSocio
-
---MODIFICAR CATEGORÍA DE SOCIO
+-- MODIFICAR CATEGORIAS DE SOCIO
 
 CREATE OR ALTER PROCEDURE socios.modificarCategoriaSocio
     @idCategoria    INT,
@@ -322,9 +322,7 @@ BEGIN
 END
 GO
 
-EXEC socios.modificarCategoriaSocio 1, Joven, 5500
-GO
---ELIMINAR CATEGORÍA DE SOCIO
+-- ELIMINAR CATEGORIAS DE SOCIO
 
 CREATE OR ALTER PROCEDURE socios.eliminarCategoriaSocio
     @idCategoria INT
@@ -340,8 +338,10 @@ BEGIN
 END
 GO
 
-EXEC socios.eliminarCategoriaSocio 2
-GO
+
+-- ###### TABLA ROLDISPONIBLE ######
+
+-- INSERTAR ROL DISPONIBLE
 
 CREATE OR ALTER PROCEDURE socios.insertarRolDisponible
     @idRol       INT,
@@ -357,8 +357,7 @@ BEGIN
 END
 GO
 
-EXEC socios.insertarRolDisponible 1, Administrador
-GO
+-- MODIFICAR ROL DISPONIBLE
 
 CREATE OR ALTER PROCEDURE socios.modificarRolDisponible
     @idRol       INT,
@@ -377,7 +376,7 @@ BEGIN
 END
 GO
 
-EXEC socios.modificarRolDisponible 1, 'Mate sin Azucar'
+-- ELIMINAR ROL DISPONIBLE
 
 CREATE OR ALTER PROCEDURE socios.eliminarRolDisponible
     @idRol INT
@@ -393,9 +392,9 @@ BEGIN
 END
 GO
 
-EXEC socios.eliminarRolDisponible 1
+-- ###### TABLA MEDIODEPAGO ######
 
-SELECT * FROM socios.rolDisponible
+-- INSERTAR MEDIO DE PAGO
 
 CREATE OR ALTER PROCEDURE pagos.insertarMedioDePago
     @idMedioDePago     INT,
@@ -412,11 +411,7 @@ BEGIN
 END
 GO
 
-EXEC pagos.insertarMedioDePago 1,'Debito','Mastercard Debito'
-GO
-
-SELECT * FROM pagos.medioDePago
-GO
+-- MODIFICAR MEDIO DE PAGO
 
 CREATE OR ALTER PROCEDURE pagos.modificarMedioDePago
     @idMedioDePago     INT,
@@ -435,7 +430,7 @@ BEGIN
 END
 GO
 
-EXEC pagos.modificarMedioDePago -1, 'Credito', 'Mastercard Crédito'
+-- ELIMINAR MEDIO DE PAGO
 
 CREATE OR ALTER PROCEDURE pagos.eliminarMedioDePago
     @idMedioDePago     INT,
@@ -453,4 +448,104 @@ BEGIN
 END
 GO
 
-EXEC pagos.eliminarMedioDePago 1, 'Debito'
+-- :::::::::::::::::::::::::::::::::::::::::::: ACTIVIDADES ::::::::::::::::::::::::::::::::::::::::::::
+
+-- ###### TABLA DEPORTEDISPONIBLE ######
+
+-- INSERTAR DEPORTE DISPONIBLE
+
+CREATE OR ALTER PROCEDURE actividades.insertarDeporteDisponible
+    @tipo VARCHAR(50),
+    @descripcion VARCHAR(50),
+    @costoPorMes DECIMAL(10, 2)
+AS
+BEGIN
+
+	IF NOT (LEN(@tipo) >= 4)
+	BEGIN
+		RAISERROR('Error: El deporte tiene que tener por lo menos 4 letras', 16, 1);
+		RETURN;
+	END
+
+	IF NOT (LEN(@descripcion) >= 4)
+	BEGIN
+		RAISERROR('Error: El deporte tiene que tener por lo menos 4 letras', 16, 1);
+		RETURN;
+	END
+
+	IF NOT (@costoPorMes > 0)
+	BEGIN
+		RAISERROR('Error: El costo tiene que ser mayor a cero', 16, 1);
+		RETURN;
+	END
+
+    INSERT INTO actividades.deporteDisponible
+        (tipo,descripcion,costoPorMes)
+    VALUES
+        (@tipo,@descripcion,@costoPorMes)
+
+END
+GO
+
+-- MODIFICAR DEPORTE DISPONIBLE
+
+CREATE OR ALTER PROCEDURE actividades.modificarDeporteDisponible
+    @idDeporte INT,
+    @tipo VARCHAR(50) = NULL,
+    @descripcion VARCHAR(50) = NULL,
+    @costoPorMes DECIMAL(10, 2) = NULL
+
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+	IF @tipo IS NOT NULL AND NOT (LEN(@tipo) >= 4)
+	BEGIN
+		RAISERROR('Error: Tipo tiene que tener mas de 4 letras', 16, 1);
+		RETURN;
+	END
+
+	IF @descripcion IS NOT NULL AND NOT(LEN(@descripcion) >= 4)
+	BEGIN
+		RAISERROR('Error: El deporte tiene que tener por lo menos 4 letras', 16, 1);
+		RETURN;
+	END
+
+	IF @costoPorMes IS NOT NULL AND NOT (@costoPorMes > 0)
+	BEGIN
+		RAISERROR('Error: El costo tiene que ser mayor a cero', 16, 1);
+		RETURN;
+	END
+
+    UPDATE actividades.deporteDisponible
+    SET
+		tipo                      = COALESCE(@tipo, tipo),
+		descripcion               = COALESCE(@descripcion, descripcion),
+		costoPorMes               = COALESCE(@costoPorMes, costoPorMes)
+    WHERE idDeporte = @idDeporte;
+
+    IF @@ROWCOUNT = 0
+    BEGIN
+        RAISERROR('No existe un deporte con idDeporte = %d.', 16, 1, @idDeporte);
+    END
+END;
+GO
+
+-- ELIMINAR DEPORTE DISPONIBLE
+
+CREATE OR ALTER PROCEDURE actividades.eliminarDeporteDisponible
+    @idDeporte INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+	DELETE FROM actividades.deporteDisponible
+	WHERE idDeporte = @idDeporte;
+    
+	IF @@ROWCOUNT = 0
+	BEGIN
+		RAISERROR('No se encontró ningún deporte con id = %d', 16, 1, @idDeporte);
+	END
+	
+END
+GO
