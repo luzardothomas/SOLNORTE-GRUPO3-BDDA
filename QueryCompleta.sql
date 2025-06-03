@@ -1,6 +1,6 @@
 ----------------------------------------------------------------------------------------------------
 -- Fecha de entrega: 19-05-2025
--- Número de grupo: 3
+-- NÃºmero de grupo: 3
 -- Materia: Bases de Datos Aplicada
 -- Alumnos:
 --   - Codina, Santiago Ivan - 44.391.352
@@ -17,17 +17,37 @@ GO
 USE SolNorte_Grupo3;
 GO
 
-DROP SCHEMA socios;
+-- Eliminar si es que existe
 
-DROP SCHEMA pagos;
+--DROP TABLE itinerarios.itinerario
+--DROP TABLE actividades.actividadRecreativa
+--DROP TABLE actividades.deporteActivo
+--DROP TABLE actividades.deporteDisponible
+--DROP TABLE descuentos.descuentoVigente
+--DROP TABLE descuentos.descuentoDisponible
+--DROP TABLE socios.tutorACargo
+--DROP TABLE socios.categoriaSocio
+--DROP TABLE coberturas.prepagaEnUso
+--DROP TABLE coberturas.coberturaDisponible
+--DROP TABLE pagos.reembolso
+--DROP TABLE pagos.facturaCobro
+--DROP TABLE pagos.medioEnUso
+--DROP TABLE pagos.medioDePago
+--DROP TABLE socios.rolVigente
+--DROP TABLE socios.rolDisponible
+--DROP TABLE socios.gruposFamiliaresActivos
+--DROP TABLE pagos.tarjetasEnUso
+--DROP TABLE pagos.tarjetaDisponible
+--DROP TABLE socios.socio
+--DROP TABLE socios.grupoFamiliar
 
-DROP SCHEMA descuentos;
-
-DROP SCHEMA intinerarios;
-
-DROP SCHEMA coberturas;
-
--- Creación de esquemas para las diferentes gestiones
+--DROP SCHEMA socios;
+--DROP SCHEMA pagos;
+--DROP SCHEMA descuentos;
+--DROP SCHEMA intinerarios;
+--DROP SCHEMA coberturas;
+	
+-- CreaciÃ³n de esquemas para las diferentes gestiones
 CREATE SCHEMA socios;
 GO
 
@@ -46,7 +66,7 @@ GO
 CREATE SCHEMA coberturas;
 GO
 
--- Creación de tablas
+-- CreaciÃ³n de tablas
 
 -- 1. socios.grupoFamiliar
 
@@ -272,8 +292,8 @@ BEGIN
 
     /*
     -- Insertamos un nuevo registro en socios.socio. 
-    -- ‘estadoMembresia’ queda por defecto en 'ACTIVO' y 
-    -- ‘fechaVencimientoMembresia’ se calcula como un mes después de hoy.
+    -- Â‘estadoMembresiaÂ’ queda por defecto en 'ACTIVO' y 
+    -- Â‘fechaVencimientoMembresiaÂ’ se calcula como un mes despuÃ©s de hoy.
     */
     INSERT INTO socios.socio (
         dni,
@@ -342,8 +362,8 @@ BEGIN
     SET NOCOUNT ON;
 
     /*
-    -- Actualizamos únicamente aquellos campos para los cuales
-    -- se haya pasado un valor NO nulo. Si el parámetro es NULL,
+    -- Actualizamos Ãºnicamente aquellos campos para los cuales
+    -- se haya pasado un valor NO nulo. Si el parÃ¡metro es NULL,
     -- se mantiene el valor previo en la fila.
     */
     UPDATE socios.socio
@@ -369,7 +389,7 @@ BEGIN
     -- Si no existe el idSocio, podemos opcionalmente informar:
     IF @@ROWCOUNT = 0
     BEGIN
-        RAISERROR('No existe ningún socio con idSocio = %d.', 16, 1, @idSocio);
+        RAISERROR('No existe ningÃºn socio con idSocio = %d.', 16, 1, @idSocio);
     END
     */
 END;
@@ -386,10 +406,10 @@ BEGIN
     WHERE idSocio = @idSocio;
 
     /*
-    -- (Opcional) Verificar si se eliminó alguna fila:
+    -- (Opcional) Verificar si se eliminÃ³ alguna fila:
     IF @@ROWCOUNT = 0
     BEGIN
-        RAISERROR('No existe ningún socio con idSocio = %d.', 16, 1, @idSocio);
+        RAISERROR('No existe ningÃºn socio con idSocio = %d.', 16, 1, @idSocio);
     END
     */
 END;
@@ -431,7 +451,7 @@ BEGIN
     WHERE idCategoria = @idCategoria AND (@costoMembresia>0)
 
     IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró categoría con id=%d.',16,1,@idCategoria);
+        RAISERROR('No se encontrÃ³ categorÃ­a con id=%d.',16,1,@idCategoria);
 END
 GO
 
@@ -447,7 +467,7 @@ BEGIN
     WHERE categoriaSocio.idCategoria = @idCategoria
 
     IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró categoría activa con id=%d.',16,1,@idCategoria);
+        RAISERROR('No se encontrÃ³ categorÃ­a activa con id=%d.',16,1,@idCategoria);
 END
 GO
 
@@ -481,11 +501,11 @@ BEGIN
 
     UPDATE socios.rolDisponible
     SET
-        descripcion = COALESCE(@descripcion, descripcion)  -- mantendrá su valor inicial si es NULL
+        descripcion = COALESCE(@descripcion, descripcion)  -- mantendrÃ¡ su valor inicial si es NULL
     WHERE idRol = @idRol
 
     IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró rol con id=%d.', 16, 1, @idRol);
+        RAISERROR('No se encontrÃ³ rol con id=%d.', 16, 1, @idRol);
 END
 GO
 
@@ -501,7 +521,7 @@ BEGIN
     WHERE idRol = @idRol
 
     IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró rol activo con id=%d.', 16, 1, @idRol);
+        RAISERROR('No se encontrÃ³ rol activo con id=%d.', 16, 1, @idRol);
 END
 GO
 
@@ -539,7 +559,7 @@ BEGIN
     WHERE idMedioDePago   = @idMedioDePag AND (@idMedioDePago>0)
 
     IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró medio de pago con id=%d.', 16, 1, @idMedioDePago, @tipoMedioDePago);
+        RAISERROR('No se encontrÃ³ medio de pago con id=%d.', 16, 1, @idMedioDePago, @tipoMedioDePago);
 END
 GO
 
@@ -557,7 +577,7 @@ BEGIN
       AND tipoMedioDePago = @tipoMedioDePago
 
     IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró medio de pago activo con id=%d y tipo="%s".', 16, 1, @idMedioDePago, @tipoMedioDePago);
+        RAISERROR('No se encontrÃ³ medio de pago activo con id=%d y tipo="%s".', 16, 1, @idMedioDePago, @tipoMedioDePago);
 END
 GO
 
@@ -657,7 +677,7 @@ BEGIN
     
 	IF @@ROWCOUNT = 0
 	BEGIN
-		RAISERROR('No se encontró ningún deporte con id = %d', 16, 1, @idDeporte);
+		RAISERROR('No se encontrÃ³ ningÃºn deporte con id = %d', 16, 1, @idDeporte);
 	END
 	
 END
@@ -677,17 +697,17 @@ AS
 BEGIN
     IF @descripcion IS NULL OR @descripcion = ''
     BEGIN
-        RAISERROR('La descripción de la actividad no puede estar vacía.', 16, 1);
+        RAISERROR('La descripciÃ³n de la actividad no puede estar vacÃ­a.', 16, 1);
         RETURN;
     END
     IF @horaInicio IS NULL OR @horaInicio = ''
     BEGIN
-        RAISERROR('La hora de inicio de la actividad no puede estar vacía.', 16, 1);
+        RAISERROR('La hora de inicio de la actividad no puede estar vacÃ­a.', 16, 1);
         RETURN;
     END
     IF @horaFin IS NULL OR @horaFin = ''
     BEGIN
-        RAISERROR('La hora de fin de la actividad no puede estar vacía.', 16, 1);
+        RAISERROR('La hora de fin de la actividad no puede estar vacÃ­a.', 16, 1);
         RETURN;
     END
     IF @tarifaSocio IS NULL OR @tarifaSocio <= 0
@@ -701,7 +721,7 @@ BEGIN
         RETURN;
     END
 
-    -- Inserción de la actividad
+    -- InserciÃ³n de la actividad
     INSERT INTO actividades.actividadRecreativa (descripcion, horaInicio, horaFin, tarifaSocio, tarifaInvitado)
     VALUES (@descripcion, @horaInicio, @horaFin, @tarifaSocio, @tarifaInvitado);
 
@@ -727,17 +747,17 @@ BEGIN
     END
     IF @descripcion IS NULL OR @descripcion = ''
     BEGIN
-        RAISERROR('La descripción de la actividad no puede estar vacía.', 16, 1);
+        RAISERROR('La descripciÃ³n de la actividad no puede estar vacÃ­a.', 16, 1);
         RETURN;
     END
     IF @horaInicio IS NULL OR @horaInicio = ''
     BEGIN
-        RAISERROR('La hora de inicio de la actividad no puede estar vacía.', 16, 1);
+        RAISERROR('La hora de inicio de la actividad no puede estar vacÃ­a.', 16, 1);
         RETURN;
     END
     IF @horaFin IS NULL OR @horaFin = ''
     BEGIN
-        RAISERROR('La hora de fin de la actividad no puede estar vacía.', 16, 1);
+        RAISERROR('La hora de fin de la actividad no puede estar vacÃ­a.', 16, 1);
         RETURN;
     END
     IF @tarifaSocio IS NULL OR @tarifaSocio <= 0
@@ -750,7 +770,7 @@ BEGIN
         RAISERROR('La tarifa para invitados debe ser mayor que cero.', 16, 1);
         RETURN;
     END
-    -- Actualización de la actividad
+    -- ActualizaciÃ³n de la actividad
     UPDATE actividades.actividadRecreativa
     SET descripcion = @descripcion,
         horaInicio = @horaInicio,
@@ -758,10 +778,10 @@ BEGIN
         tarifaSocio = @tarifaSocio,
         tarifaInvitado = @tarifaInvitado
     WHERE idActividad = @idActividad;
-    -- Verificar si se actualizó alguna fila
+    -- Verificar si se actualizÃ³ alguna fila
     IF @@ROWCOUNT = 0
     BEGIN
-        RAISERROR('No se encontró ninguna actividad con el ID especificado.', 16, 1);
+        RAISERROR('No se encontrÃ³ ninguna actividad con el ID especificado.', 16, 1);
         RETURN;
     END
 END;
@@ -778,13 +798,13 @@ BEGIN
         RAISERROR('El ID de la actividad debe ser un valor positivo.', 16, 1);
         RETURN;
     END
-    -- Eliminación de la actividad
+    -- EliminaciÃ³n de la actividad
     DELETE FROM actividades.actividadRecreativa
     WHERE idActividad = @idActividad;
     
     IF @@ROWCOUNT = 0
     BEGIN
-        RAISERROR('No se encontró ninguna actividad con el ID especificado.', 16, 1);
+        RAISERROR('No se encontrÃ³ ninguna actividad con el ID especificado.', 16, 1);
         RETURN;
     END
 END;
@@ -806,7 +826,7 @@ BEGIN
     SET @estadoMembresia = (SELECT s.estadoMembresia FROM socios.socio s WHERE s.idSocio = @idSocio)
 	IF NOT (@estadoMembresia IN ('Activo','Moroso'))
     BEGIN
-        RAISERROR('Miembro no válido.', 16, 1);
+        RAISERROR('Miembro no vÃ¡lido.', 16, 1);
         RETURN;
     END;
 
@@ -835,25 +855,25 @@ BEGIN
     -- Validaciones
     IF @estadoMembresia IS NOT NULL AND NOT (@estadoMembresia IN ('Activo', 'Moroso', 'Inactivo'))
     BEGIN
-        RAISERROR('Error: Estado de membresía debe ser Activo, Moroso o Inactivo.', 16, 1);
+        RAISERROR('Error: Estado de membresÃ­a debe ser Activo, Moroso o Inactivo.', 16, 1);
         RETURN;
     END
 
-    -- Validación existencia de socio si se quiere modificar
+    -- ValidaciÃ³n existencia de socio si se quiere modificar
     IF @idSocio IS NOT NULL AND NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
     BEGIN
         RAISERROR('Error: El socio especificado no existe.', 16, 1);
         RETURN;
     END
 
-    -- Validación existencia de deporte si se quiere modificar
+    -- ValidaciÃ³n existencia de deporte si se quiere modificar
     IF @idDeporte IS NOT NULL AND NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte)
     BEGIN
         RAISERROR('Error: El deporte especificado no existe.', 16, 1);
         RETURN;
     END
 
-    -- Actualización condicional
+    -- ActualizaciÃ³n condicional
     UPDATE actividades.deporteActivo
     SET
         idSocio         = COALESCE(@idSocio, idSocio),
@@ -861,7 +881,7 @@ BEGIN
         estadoMembresia = COALESCE(@estadoMembresia, estadoMembresia)
     WHERE idDeporteActivo = @idDeporteActivo;
 
-    -- Verificación de actualización
+    -- VerificaciÃ³n de actualizaciÃ³n
     IF @@ROWCOUNT = 0
     BEGIN
         RAISERROR('No existe una fila con idDeporteActivo = %d.', 16, 1, @idDeporteActivo);
@@ -897,7 +917,7 @@ AS
 BEGIN
     IF NOT (LEN(@dia) >= 5 AND LEN(@dia) <= 9)
     BEGIN
-        RAISERROR('Error: El día de la semana debe tener entre 5 y 9 letras', 16, 1);
+        RAISERROR('Error: El dÃ­a de la semana debe tener entre 5 y 9 letras', 16, 1);
         RETURN;
     END
 
@@ -912,7 +932,7 @@ BEGIN
         RETURN;
     END
 
-    -- Inserción válida
+    -- InserciÃ³n vÃ¡lida
     INSERT INTO itinerarios.itinerario (dia, idDeporte, horaInicio, horaFin)
     VALUES (@dia, @idDeporte, @horaInicio, @horaFin);
 END;
@@ -930,10 +950,10 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Validar día
+    -- Validar dÃ­a
     IF @dia IS NOT NULL AND NOT (LEN(@dia) >= 5 AND LEN(@dia) <= 9)
     BEGIN
-        RAISERROR('Error: El día de la semana debe tener entre 5 y 9 letras', 16, 1);
+        RAISERROR('Error: El dÃ­a de la semana debe tener entre 5 y 9 letras', 16, 1);
         RETURN;
     END
 
@@ -960,7 +980,7 @@ BEGIN
         horaFin = COALESCE(@horaFin, horaFin)
     WHERE idItinerario = @idItinerario;
 
-    -- Validar si se actualizó alguna fila
+    -- Validar si se actualizÃ³ alguna fila
     IF @@ROWCOUNT = 0
     BEGIN
         RAISERROR('No existe un itinerario con idItinerario = %d.', 16, 1, @idItinerario);
@@ -981,34 +1001,11 @@ BEGIN
     
 	IF @@ROWCOUNT = 0
 	BEGIN
-		RAISERROR('No se encontró ningún itinerario con id = %d', 16, 1, @idItinerario);
+		RAISERROR('No se encontrÃ³ ningÃºn itinerario con id = %d', 16, 1, @idItinerario);
 	END
 	
 END
 GO
-
-USE SolNorte_Grupo3
-GO
-
--- Eliminar todas las tablas
-
---DROP TABLE itinerarios.itinerario
---DROP TABLE actividades.actividadRecreativa
---DROP TABLE actividades.deporteActivo
---DROP TABLE actividades.deporteDisponible
---DROP TABLE descuentos.descuentoVigente
---DROP TABLE descuentos.descuentoDisponible
---DROP TABLE socios.tutorACargo
---DROP TABLE socios.categoriaSocio
---DROP TABLE coberturas.prepagaEnUso
---DROP TABLE coberturas.coberturaDisponible
---DROP TABLE pagos.reembolso
---DROP TABLE pagos.facturaCobro
---DROP TABLE pagos.medioEnUso
---DROP TABLE pagos.medioDePago
---DROP TABLE socios.rolVigente
---DROP TABLE socios.rolDisponible
---DROP TABLE socios.socio
 
 -- :::::::::::::::::::::::::::::::::::::::::::: SOCIOS ::::::::::::::::::::::::::::::::::::::::::::
 
@@ -1016,22 +1013,22 @@ GO
 
 -- INSERTAR
 
-EXEC socios.insertarSocio 10123456, 20101234561, 'Juan', 'Pérez', 'juan.perez@gmail.com', '1134567890', '1985-04-12', '2028-01-01', '1122334455', 'jperez', 'clave123', 'Activo', 0.00
-EXEC socios.insertarSocio 10234567, 20102345672, 'María', 'Gómez', 'maria.gomez@yahoo.com', '1145678901', '1990-08-23', '2028-01-01', '1133445566', 'mgomez', 'clave123', 'Activo', 100.00
-EXEC socios.insertarSocio 10345678, 20103456783, 'Carlos', 'Rodríguez', 'carlos.r@gmail.com', '1156789012', '1978-02-14', '2028-01-01', '1144556677', 'crodriguez', 'clave123', 'Activo', 200.00
-EXEC socios.insertarSocio 10456789, 20104567894, 'Ana', 'Martínez', 'ana.martinez@hotmail.com', '1167890123', '1995-12-01', '2028-01-01', '1155667788', 'amartinez', 'clave123', 'Activo', 300.00
-EXEC socios.insertarSocio 10567890, 20105678905, 'Luis', 'Fernández', 'luisf@live.com', '1178901234', '1982-11-19', '2028-01-01', '1166778899', 'lfernandez', 'clave123', 'Activo', 400.00
-EXEC socios.insertarSocio 10678901, 20106789016, 'Laura', 'López', 'laura.lopez@gmail.com', '1189012345', '1998-06-30', '2028-01-01', '1177889900', 'llopez', 'clave123', 'Activo', 500.00
-EXEC socios.insertarSocio 10789012, 20107890127, 'Jorge', 'García', 'jorge.garcia@gmail.com', '1190123456', '1987-09-07', '2028-01-01', '1188990011', 'jgarcia', 'clave123', 'Activo', 600.00
-EXEC socios.insertarSocio 10890123, 20108901238, 'Valeria', 'Díaz', 'valeria.diaz@gmail.com', '1101234567', '1991-03-18', '2028-01-01', '1199001122', 'vdiaz', 'clave123', 'Activo', 700.00
-EXEC socios.insertarSocio 10901234, 20109012349, 'Ricardo', 'Sánchez', 'ricardo.s@hotmail.com', '1112345678', '1983-07-11', '2028-01-01', '1110011223', 'rsanchez', 'clave123', 'Activo', 800.00
-EXEC socios.insertarSocio 11012345, 20110123450, 'Sofía', 'Torres', 'sofia.torres@gmail.com', '1123456789', '1996-10-29', '2028-01-01', '1121122334', 'storres', 'clave123', 'Activo', 900.00
-EXEC socios.insertarSocio 11123456, 20111234561, 'Diego', 'Ramírez', 'diego.ramirez@gmail.com', '1134567890', '1989-05-06', '2028-01-01', '1132233445', 'dramirez', 'clave123', 'Activo', 0.00
+EXEC socios.insertarSocio 10123456, 20101234561, 'Juan', 'PÃ©rez', 'juan.perez@gmail.com', '1134567890', '1985-04-12', '2028-01-01', '1122334455', 'jperez', 'clave123', 'Activo', 0.00
+EXEC socios.insertarSocio 10234567, 20102345672, 'MarÃ­a', 'GÃ³mez', 'maria.gomez@yahoo.com', '1145678901', '1990-08-23', '2028-01-01', '1133445566', 'mgomez', 'clave123', 'Activo', 100.00
+EXEC socios.insertarSocio 10345678, 20103456783, 'Carlos', 'RodrÃ­guez', 'carlos.r@gmail.com', '1156789012', '1978-02-14', '2028-01-01', '1144556677', 'crodriguez', 'clave123', 'Activo', 200.00
+EXEC socios.insertarSocio 10456789, 20104567894, 'Ana', 'MartÃ­nez', 'ana.martinez@hotmail.com', '1167890123', '1995-12-01', '2028-01-01', '1155667788', 'amartinez', 'clave123', 'Activo', 300.00
+EXEC socios.insertarSocio 10567890, 20105678905, 'Luis', 'FernÃ¡ndez', 'luisf@live.com', '1178901234', '1982-11-19', '2028-01-01', '1166778899', 'lfernandez', 'clave123', 'Activo', 400.00
+EXEC socios.insertarSocio 10678901, 20106789016, 'Laura', 'LÃ³pez', 'laura.lopez@gmail.com', '1189012345', '1998-06-30', '2028-01-01', '1177889900', 'llopez', 'clave123', 'Activo', 500.00
+EXEC socios.insertarSocio 10789012, 20107890127, 'Jorge', 'GarcÃ­a', 'jorge.garcia@gmail.com', '1190123456', '1987-09-07', '2028-01-01', '1188990011', 'jgarcia', 'clave123', 'Activo', 600.00
+EXEC socios.insertarSocio 10890123, 20108901238, 'Valeria', 'DÃ­az', 'valeria.diaz@gmail.com', '1101234567', '1991-03-18', '2028-01-01', '1199001122', 'vdiaz', 'clave123', 'Activo', 700.00
+EXEC socios.insertarSocio 10901234, 20109012349, 'Ricardo', 'SÃ¡nchez', 'ricardo.s@hotmail.com', '1112345678', '1983-07-11', '2028-01-01', '1110011223', 'rsanchez', 'clave123', 'Activo', 800.00
+EXEC socios.insertarSocio 11012345, 20110123450, 'SofÃ­a', 'Torres', 'sofia.torres@gmail.com', '1123456789', '1996-10-29', '2028-01-01', '1121122334', 'storres', 'clave123', 'Activo', 900.00
+EXEC socios.insertarSocio 11123456, 20111234561, 'Diego', 'RamÃ­rez', 'diego.ramirez@gmail.com', '1134567890', '1989-05-06', '2028-01-01', '1132233445', 'dramirez', 'clave123', 'Activo', 0.00
 EXEC socios.insertarSocio 11234567, 20112345672, 'Julieta', 'Moreno', 'julieta.moreno@yahoo.com', '1145678901', '1994-01-27', '2028-01-01', '1143344556', 'jmoreno', 'clave123', 'Activo', 100.00
-EXEC socios.insertarSocio 11345678, 20113456783, 'Martín', 'Silva', 'martin.silva@gmail.com', '1156789012', '1980-06-02', '2028-01-01', '1154455667', 'msilva', 'clave123', 'Activo', 200.00
+EXEC socios.insertarSocio 11345678, 20113456783, 'MartÃ­n', 'Silva', 'martin.silva@gmail.com', '1156789012', '1980-06-02', '2028-01-01', '1154455667', 'msilva', 'clave123', 'Activo', 200.00
 EXEC socios.insertarSocio 11456789, 20114567894, 'Camila', 'Ortiz', 'camila.ortiz@gmail.com', '1167890123', '1992-11-11', '2028-01-01', '1165566778', 'cortiz', 'clave123', 'Activo', 300.00
 EXEC socios.insertarSocio 11567890, 20115678905, 'Pedro', 'Molina', 'pedro.molina@live.com', '1178901234', '1986-03-16', '2028-01-01', '1176677889', 'pmolina', 'clave123', 'Activo', 400.00
-EXEC socios.insertarSocio 11678901, 20116789016, 'Lucía', 'Rojas', 'lucia.rojas@gmail.com', '1189012345', '1999-09-09', '2028-01-01', '1187788990', 'lrojas', 'clave123', 'Activo', 500.00
+EXEC socios.insertarSocio 11678901, 20116789016, 'LucÃ­a', 'Rojas', 'lucia.rojas@gmail.com', '1189012345', '1999-09-09', '2028-01-01', '1187788990', 'lrojas', 'clave123', 'Activo', 500.00
 EXEC socios.insertarSocio 11789012, 20117890127, 'Fernando', 'Castro', 'fernando.castro@gmail.com', '1190123456', '1977-04-04', '2028-01-01', '1198899001', 'fcastro', 'clave123', 'Activo', 600.00
 EXEC socios.insertarSocio 11890123, 20118901238, 'Elena', 'Acosta', 'elena.acosta@gmail.com', '1101234567', '1993-12-21', '2028-01-01', '1109900112', 'eacosta', 'clave123', 'Activo', 700.00
 EXEC socios.insertarSocio 11901234, 20119012349, 'Gabriel', 'Cruz', 'gabriel.cruz@hotmail.com', '1112345678', '1981-08-08', '2028-01-01', '1111011223', 'gcruz', 'clave123', 'Activo', 800.00
@@ -1104,7 +1101,7 @@ SELECT * FROM pagos.medioDePago
 
 -- MODIFICAR
 
-EXEC pagos.modificarMedioDePago -1, 'Credito', 'Mastercard Crédito'
+EXEC pagos.modificarMedioDePago -1, 'Credito', 'Mastercard CrÃ©dito'
 SELECT * FROM pagos.medioDePago
 
 -- ELIMINAR
@@ -1118,7 +1115,7 @@ SELECT * FROM pagos.medioDePago
 
 -- INSERTAR
 
-EXEC actividades.insertarDeporteDisponible 'Fútbol', 'Fútbol 5', 1500.00;
+EXEC actividades.insertarDeporteDisponible 'FÃºtbol', 'FÃºtbol 5', 1500.00;
 EXEC actividades.insertarDeporteDisponible 'Basquet', 'Cancha profesional', 1500.00;
 EXEC actividades.insertarDeporteDisponible 'Tenis', 'Cancha ladrillo', 1500.00;
 
@@ -1140,34 +1137,34 @@ EXEC actividades.eliminarDeporteDisponible @idDeporte = 1
 
 -- INSERTAR
 -- Casos Validos
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, 75.00;
+EXEC actividades.insertarActividadRecreativa 'FÃºtbol', '18:00', '20:00', 50.00, 75.00;
 EXEC actividades.insertarActividadRecreativa 'Bochas', '08:30', '10:00', 15.00, 20.00;
 EXEC actividades.insertarActividadRecreativa 'Ajedrez', '09:00', '11:00', 20.00, 35.00;
 
 SELECT *
 FROM actividades.actividadRecreativa 
 -- Casos Invalidos
-EXEC actividades.insertarActividadRecreativa '', '18:00', '20:00', 50.00, 75.00; -- Descripción vacía
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '', '20:00', 50.00, 75.00; -- Hora de inicio vacía
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '', 50.00, 75.00; -- Hora de fin vacía
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 0, 75.00;    -- Tarifa socio inválida
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, 0;    -- Tarifa invitado inválida
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', -10, 75.00;  -- Tarifa socio negativa
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, -10;  -- Tarifa invitado negativa
+EXEC actividades.insertarActividadRecreativa '', '18:00', '20:00', 50.00, 75.00; -- DescripciÃ³n vacÃ­a
+EXEC actividades.insertarActividadRecreativa 'FÃºtbol', '', '20:00', 50.00, 75.00; -- Hora de inicio vacÃ­a
+EXEC actividades.insertarActividadRecreativa 'FÃºtbol', '18:00', '', 50.00, 75.00; -- Hora de fin vacÃ­a
+EXEC actividades.insertarActividadRecreativa 'FÃºtbol', '18:00', '20:00', 0, 75.00;    -- Tarifa socio invÃ¡lida
+EXEC actividades.insertarActividadRecreativa 'FÃºtbol', '18:00', '20:00', 50.00, 0;    -- Tarifa invitado invÃ¡lida
+EXEC actividades.insertarActividadRecreativa 'FÃºtbol', '18:00', '20:00', -10, 75.00;  -- Tarifa socio negativa
+EXEC actividades.insertarActividadRecreativa 'FÃºtbol', '18:00', '20:00', 50.00, -10;  -- Tarifa invitado negativa
 
 -- MODIFICAR
 
 -- Caso Valido
 DECLARE @idActividadModificar INT;
 SELECT @idActividadModificar = 2;
-EXEC actividades.modificarActividadRecreativa @idActividadModificar, 'Fútbol Recreativo', '13:00', '15:00', 35.00, 55.00;
+EXEC actividades.modificarActividadRecreativa @idActividadModificar, 'FÃºtbol Recreativo', '13:00', '15:00', 35.00, 55.00;
 -- Casos Invalidos
 EXEC actividades.modificarActividadRecreativa 9999, 'Tenis', '10:00', '12:00', 60.00, 90.00; -- ID inexistente
-EXEC actividades.modificarActividadRecreativa 1, '', '10:00', '12:00', 60.00, 90.00;    -- Descripción vacía
-EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '', '12:00', 60.00, 90.00;    -- Hora inicio vacía
-EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '', 60.00, 90.00;    -- Hora fin vacía
-EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 0, 90.00;       -- Tarifa socio inválida
-EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 60.00, 0;       -- Tarifa invitado inválida
+EXEC actividades.modificarActividadRecreativa 1, '', '10:00', '12:00', 60.00, 90.00;    -- DescripciÃ³n vacÃ­a
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '', '12:00', 60.00, 90.00;    -- Hora inicio vacÃ­a
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '', 60.00, 90.00;    -- Hora fin vacÃ­a
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 0, 90.00;       -- Tarifa socio invÃ¡lida
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 60.00, 0;       -- Tarifa invitado invÃ¡lida
 
 -- ELIMINAR
 -- Caso Valido
