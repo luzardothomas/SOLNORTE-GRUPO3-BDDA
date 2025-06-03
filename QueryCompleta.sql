@@ -164,7 +164,7 @@ GO
 
 -- 10. socios.rolDisponible
 CREATE TABLE socios.rolDisponible (
-    idRol INT NOT NULL CHECK (idRol > 0) PRIMARY KEY,
+    idRol INT PRIMARY KEY IDENTITY(1,1),
     descripcion VARCHAR(25) NOT NULL
 );
 GO
@@ -269,28 +269,28 @@ GO
 
 -- INSERTAR SOCIO
 
-CREATE PROCEDURE [socios].[InsertarSocio]
+CREATE OR ALTER PROCEDURE socios.InsertarSocio
     @dni                       BIGINT,
     @cuil                      BIGINT,
     @nomyap                    VARCHAR(30),
     @email                     VARCHAR(30)      = NULL,
     @telefono                  CHAR(14)         = NULL,
     @fechaNacimiento           DATE             = NULL,
-    @fechaDeVigenciaContrasenia DATE            = NULL,
-    @contactoDeEmergencia      CHAR(14)         = NULL,
-    @idGrupoFamiliar           INT              = NULL,
+    @idGrupo                   INT              = NULL,
     @usuario                   VARCHAR(25)      = NULL,
     @contrasenia               VARCHAR(10)      = NULL,
     @saldoAFavor               DECIMAL(10,2)    = 0,
-    @direccion                 VARCHAR(25)      = NULL
+    @direccion                 VARCHAR(25)      = NULL,
+    @contactoDeEmergencia      CHAR(14)         = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
     /*
-    -- Insertamos un nuevo registro en socios.socio. 
-    -- estadoMembresia queda por defecto en 'ACTIVO' y 
-    -- fechaVencimientoMembresia se calcula como un mes después de hoy.
+      - Calculamos:
+        fechaVencimientoMembresia  = un mes después de hoy
+        fechaDeVigenciaContrasenia = tres meses después de hoy
+        estadoMembresia             = 'ACTIVO'
     */
     INSERT INTO socios.socio (
         dni,
@@ -303,11 +303,11 @@ BEGIN
         fechaVencimientoMembresia,
         estadoMembresia,
         contactoDeEmergencia,
-        idGrupoFamiliar,
         usuario,
         contrasenia,
         saldoAFavor,
-        direccion
+        direccion,
+        idGrupo
     )
     VALUES (
         @dni,
@@ -316,102 +316,100 @@ BEGIN
         @email,
         @telefono,
         @fechaNacimiento,
-        @fechaDeVigenciaContrasenia,
+        -- Vigencia de Contraseña: 3 meses
+        DATEADD(MONTH, 3, CAST(GETDATE() AS DATE)),
+        -- Vigencia de Membresía: 1 mes.
         DATEADD(MONTH, 1, CAST(GETDATE() AS DATE)),
         'ACTIVO',
         @contactoDeEmergencia,
-        @idGrupoFamiliar,
         @usuario,
         @contrasenia,
         @saldoAFavor,
-        @direccion
+        @direccion,
+        @idGrupo
     );
-
-    /*
-    -- (Opcional) Devolver el ID generado del nuevo socio
-    */
     SELECT SCOPE_IDENTITY() AS NuevoIdSocio;
 END;
-GO
+GO;
 
+
+EXEC socios.InsertarSocio
+    @dni                  = 12345678,
+    @cuil                 = 20123456789,
+    @nomyap               = 'María Gómez',
+    @email                = 'maria.gomez@mail.com',
+    @telefono             = '01155667788',
+    @fechaNacimiento      = '1990-03-22',
+    @usuario              = 'mariag',
+    @contrasenia          = 'ClaveSegura',
+    @saldoAFavor          = 50.00,
+    @direccion            = 'Av. Siempre Viva 742',
+    @contactoDeEmergencia = '01188776655';
+GO;
 
 -- MODIFICAR SOCIO
 
-CREATE PROCEDURE [socios].[ModificarSocio]
-    @idSocio                   INT,
-    @dni                       BIGINT            = NULL,
-    @cuil                      BIGINT            = NULL,
-    @nomyap                    VARCHAR(30)       = NULL,
-    @email                     VARCHAR(30)       = NULL,
-    @telefono                  CHAR(14)          = NULL,
-    @fechaNacimiento           DATE              = NULL,
-    @fechaDeVigenciaContrasenia DATE             = NULL,
-    @fechaVencimientoMembresia DATE              = NULL,
-    @estadoMembresia           VARCHAR(25)       = NULL,
-    @contactoDeEmergencia      CHAR(14)          = NULL,
-    @idGrupoFamiliar           INT               = NULL,
-    @usuario                   VARCHAR(25)       = NULL,
-    @contrasenia               VARCHAR(10)       = NULL,
-    @saldoAFavor               DECIMAL(10,2)     = NULL,
-    @direccion                 VARCHAR(25)       = NULL
+CREATE OR ALTER PROCEDURE socios.ModificarSocio
+    @idSocio                    INT,
+    @dni                        BIGINT              = NULL,
+    @cuil                       BIGINT              = NULL,
+    @nomyap                     VARCHAR(30)         = NULL,
+    @email                      VARCHAR(30)         = NULL,
+    @telefono                   CHAR(14)            = NULL,
+    @fechaNacimiento            DATE                = NULL,
+    @fechaDeVigenciaContrasenia DATE                = NULL,
+    @fechaVencimientoMembresia  DATE                = NULL,
+    @estadoMembresia            VARCHAR(25)         = NULL,
+    @contactoDeEmergencia       CHAR(14)            = NULL,
+    @usuario                    VARCHAR(25)         = NULL,
+    @contrasenia                VARCHAR(10)         = NULL,
+    @saldoAFavor                DECIMAL(10,2)       = NULL,
+    @direccion                  VARCHAR(25)         = NULL,
+    @idGrupo                    INT                 = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-
-    /*
-    -- Actualizamos únicamente aquellos campos para los cuales
-    -- se haya pasado un valor NO nulo. Si el parámetro es NULL,
-    -- se mantiene el valor previo en la fila.
-    */
     UPDATE socios.socio
     SET
-        dni                       = COALESCE(@dni,                       dni),
-        cuil                      = COALESCE(@cuil,                      cuil),
-        nomyap                    = COALESCE(@nomyap,                    nomyap),
-        email                     = COALESCE(@email,                     email),
-        telefono                  = COALESCE(@telefono,                  telefono),
-        fechaNacimiento           = COALESCE(@fechaNacimiento,           fechaNacimiento),
+        dni                        = COALESCE(@dni,                        dni),
+        cuil                       = COALESCE(@cuil,                       cuil),
+        nomyap                     = COALESCE(@nomyap,                     nomyap),
+        email                      = COALESCE(@email,                      email),
+        telefono                   = COALESCE(@telefono,                   telefono),
+        fechaNacimiento            = COALESCE(@fechaNacimiento,            fechaNacimiento),
         fechaDeVigenciaContrasenia = COALESCE(@fechaDeVigenciaContrasenia, fechaDeVigenciaContrasenia),
-        fechaVencimientoMembresia = COALESCE(@fechaVencimientoMembresia, fechaVencimientoMembresia),
-        estadoMembresia           = COALESCE(@estadoMembresia,           estadoMembresia),
-        contactoDeEmergencia      = COALESCE(@contactoDeEmergencia,      contactoDeEmergencia),
-        idGrupoFamiliar           = COALESCE(@idGrupoFamiliar,           idGrupoFamiliar),
-        usuario                   = COALESCE(@usuario,                   usuario),
-        contrasenia               = COALESCE(@contrasenia,               contrasenia),
-        saldoAFavor               = COALESCE(@saldoAFavor,               saldoAFavor),
-        direccion                 = COALESCE(@direccion,                 direccion)
+        fechaVencimientoMembresia  = COALESCE(@fechaVencimientoMembresia,  fechaVencimientoMembresia),
+        estadoMembresia            = COALESCE(@estadoMembresia,            estadoMembresia),
+        contactoDeEmergencia       = COALESCE(@contactoDeEmergencia,       contactoDeEmergencia),
+        usuario                    = COALESCE(@usuario,                    usuario),
+        contrasenia                = COALESCE(@contrasenia,                contrasenia),
+        saldoAFavor                = COALESCE(@saldoAFavor,                saldoAFavor),
+        direccion                  = COALESCE(@direccion,                  direccion),
+        idGrupo                    = COALESCE(@idGrupo,                    idGrupo)
     WHERE idSocio = @idSocio;
-
-    /*
-    -- Si no existe el idSocio, podemos opcionalmente informar:
-    IF @@ROWCOUNT = 0
-    BEGIN
-        RAISERROR('No existe ningún socio con idSocio = %d.', 16, 1, @idSocio);
-    END
-    */
 END;
 GO
+
+EXEC socios.ModificarSocio
+    @idSocio  = 6,
+    @email    = 'nuevo.email@mail.com'
+GO
+
+
+
+
 -- ELIMINAR SOCIO
 
-CREATE PROCEDURE [socios].[EliminarSocio]
+CREATE OR ALTER PROCEDURE socios.eliminarSocio
     @idSocio INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
     DELETE FROM socios.socio
-    WHERE idSocio = @idSocio;
-
-    /*
-    -- (Opcional) Verificar si se eliminó alguna fila:
-    IF @@ROWCOUNT = 0
-    BEGIN
-        RAISERROR('No existe ningún socio con idSocio = %d.', 16, 1, @idSocio);
-    END
-    */
-END;
+    WHERE idSocio = @idSocio and estadoMembresia = 'INACTIVO';
+END
 GO
-
 
 -- ###### TABLA CATEGORIASSOCIO ######
 
@@ -440,15 +438,14 @@ CREATE OR ALTER PROCEDURE socios.modificarCategoriaSocio
 AS
 BEGIN
     SET NOCOUNT ON;
-    
+    IF (@costoMembresia>0)
+	BEGIN
     UPDATE socios.categoriaSocio
     SET
         tipo           = COALESCE(@tipo, tipo),
         costoMembresia = COALESCE(@costoMembresia, costoMembresia)
     WHERE idCategoria = @idCategoria AND (@costoMembresia>0)
-
-    IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró categoría con id=%d.',16,1,@idCategoria);
+	END
 END
 GO
 
@@ -462,9 +459,6 @@ BEGIN
     
     DELETE FROM socios.categoriaSocio
     WHERE categoriaSocio.idCategoria = @idCategoria
-
-    IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró categoría activa con id=%d.',16,1,@idCategoria);
 END
 GO
 
@@ -474,17 +468,16 @@ GO
 -- INSERTAR ROL DISPONIBLE
 
 CREATE OR ALTER PROCEDURE socios.insertarRolDisponible
-    @idRol       INT,
     @descripcion VARCHAR(50)
 AS
 BEGIN
     SET NOCOUNT ON;
-	IF(@idRol > 0)
-	BEGIN
-    INSERT INTO socios.rolDisponible (idRol, descripcion)
-    VALUES (@idRol, @descripcion);
-	END
+    INSERT INTO socios.rolDisponible (descripcion)
+    VALUES (@descripcion);
 END
+GO
+
+EXEC socios.insertarRolDisponible @descripcion='admin'
 GO
 
 -- MODIFICAR ROL DISPONIBLE
