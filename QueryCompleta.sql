@@ -173,7 +173,7 @@ GO
 CREATE TABLE actividades.deporteActivo (
     idSocioActivo INT NOT NULL,
     idDeporteActivo INT NOT NULL,
-    estadoMembresia VARCHAR(8) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso', 'Inactivo')),
+    estadoMembresia VARCHAR(25) NOT NULL CHECK (estadoMembresia='ACTIVO' OR estadoMembresia='MOROSO - 1ER VENCIMIENTO' OR estadoMembresia='MOROSO - 2DO VENCIMIENTO' OR estadoMembresia='INACTIVO'),
     FOREIGN KEY (idSocioActivo) REFERENCES socios.socio(idSocio),
     FOREIGN KEY (idDeporteActivo) REFERENCES actividades.deporteDisponible(idDeporte),
 	CONSTRAINT PKDeportesActivos PRIMARY KEY (idSocioActivo, idDeporteActivo)
@@ -332,6 +332,7 @@ BEGIN
 END;
 GO;
 
+
 EXEC socios.InsertarSocio
     @dni                  = 12345678,
     @cuil                 = 20123456789,
@@ -343,8 +344,7 @@ EXEC socios.InsertarSocio
     @contrasenia          = 'ClaveSegura',
     @saldoAFavor          = 50.00,
     @direccion            = 'Av. Siempre Viva 742',
-    @contactoDeEmergencia = '01188776655';
-GO;
+    @contactoDeEmergencia = '01188776655'
 
 SELECT *
 FROM socios.socio s 
@@ -430,7 +430,7 @@ BEGIN
 END
 GO
 
-EXEC socios.insertarCategoriaSocio Cadete, 5000
+EXEC socios.insertarCategoriaSocio CADETE, 5000
 SELECT * FROM socios.categoriaSocio
 
 -- MODIFICAR CATEGORIAS DE SOCIO
@@ -453,7 +453,7 @@ BEGIN
 END
 GO
 
-EXEC socios.modificarCategoriaSocio 1, Joven, 5500
+EXEC socios.modificarCategoriaSocio 1, 'MENOR', 5500
 SELECT * FROM socios.categoriaSocio
 
 -- ELIMINAR CATEGORIAS DE SOCIO
@@ -489,6 +489,8 @@ GO
 
 EXEC socios.insertarRolDisponible @descripcion='admin'
 GO
+
+SELECT * FROM socios.rolDisponible
 
 -- MODIFICAR ROL DISPONIBLE
 
@@ -533,68 +535,93 @@ SELECT * FROM socios.rolDisponible
 
 -- ###### TABLA MEDIODEPAGO ######
 
--- INSERTAR MEDIO DE PAGO
+-- INSERTAR TARJETAS DISPONIBLE
 
-CREATE OR ALTER PROCEDURE pagos.insertarMedioDePago
-    @idMedioDePago     INT,
-    @tipoMedioDePago   VARCHAR(50),
-    @descripcion       VARCHAR(50)
+CREATE OR ALTER PROCEDURE pagos.InsertarTarjetaDisponible
+    @tipoTarjeta VARCHAR(50),
+    @descripcion VARCHAR(50)
 AS
 BEGIN
     SET NOCOUNT ON;
-	IF(@idMedioDePago>0)
-	BEGIN
-    INSERT INTO pagos.medioDePago (idMedioDePago, tipoMedioDePago, descripcion)
-    VALUES (@idMedioDePago, @tipoMedioDePago, @descripcion);
-	END
-END
+
+    INSERT INTO pagos.tarjetaDisponible (
+        tipoTarjeta,
+        descripcion
+    )
+    VALUES (
+        @tipoTarjeta,
+        @descripcion
+    );
+
+    -- Devolver los valores de la PK recién creados
+    SELECT 
+        CAST(SCOPE_IDENTITY() AS INT) AS NuevoIdTarjeta,
+        @tipoTarjeta                   AS TipoTarjeta;
+END;
 GO
 
-EXEC pagos.insertarMedioDePago 1,'Debito','Mastercard Debito'
-SELECT * FROM pagos.medioDePago
 
--- MODIFICAR MEDIO DE PAGO
+EXEC pagos.InsertarTarjetaDisponible 'Debito','Mastercard Debito'
+SELECT * FROM pagos.tarjetaDisponible
 
-CREATE OR ALTER PROCEDURE pagos.modificarMedioDePago
-    @idMedioDePago     INT,
-    @tipoMedioDePago   VARCHAR(50),
-    @descripcion       VARCHAR(50) = NULL
+-- MODIFICAR TARJETAS DISPONIBLE
+
+CREATE OR ALTER PROCEDURE pagos.ModificarTarjetaDisponible
+    @idTarjeta        INT,
+    @tipoTarjeta      VARCHAR(50),
+    @nuevaDescripcion VARCHAR(50)
 AS
 BEGIN
-
-    UPDATE pagos.medioDePago
-    SET
-        descripcion = COALESCE(@descripcion, descripcion)
-    WHERE idMedioDePago   = @idMedioDePag AND (@idMedioDePago>0)
+    SET NOCOUNT ON;
+    UPDATE pagos.tarjetaDisponible
+    SET descripcion = @nuevaDescripcion
+    WHERE idTarjeta   = @idTarjeta
+      AND tipoTarjeta = @tipoTarjeta;
 
     IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró medio de pago con id=%d.', 16, 1, @idMedioDePago, @tipoMedioDePago);
-END
+    BEGIN
+        RAISERROR(
+            'No se encontró ninguna tarjeta con (idTarjeta=%d, tipoTarjeta=''%s'').',
+            16, 1,
+            @idTarjeta, @tipoTarjeta
+        );
+    END
+END;
 GO
 
-EXEC pagos.modificarMedioDePago -1, 'Credito', 'Mastercard Crédito'
-SELECT * FROM pagos.medioDePago
+EXEC pagos.ModificarTarjetaDisponible -1, 'Credito', 'Mastercard Crédito'
+SELECT * FROM pagos.tarjetaDisponible
 
 -- ELIMINAR MEDIO DE PAGO
 
-CREATE OR ALTER PROCEDURE pagos.eliminarMedioDePago
-    @idMedioDePago     INT,
-    @tipoMedioDePago   VARCHAR(50)
+CREATE OR ALTER PROCEDURE pagos.EliminarTarjetaDisponible
+    @idTarjeta   INT,
+    @tipoTarjeta VARCHAR(50)
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    DELETE FROM pagos.medioDePago
-    WHERE idMedioDePago   = @idMedioDePago
-      AND tipoMedioDePago = @tipoMedioDePago
+    /*
+      Borrado físico de la fila que coincide exactamente con la clave compuesta.
+      Si no existe, devolvemos un error.
+    */
+    DELETE FROM pagos.tarjetaDisponible
+    WHERE idTarjeta   = @idTarjeta
+      AND tipoTarjeta = @tipoTarjeta;
 
     IF @@ROWCOUNT = 0
-        RAISERROR('No se encontró medio de pago activo con id=%d y tipo="%s".', 16, 1, @idMedioDePago, @tipoMedioDePago);
-END
+    BEGIN
+        RAISERROR(
+            'No se encontró ninguna tarjeta con (idTarjeta=%d, tipoTarjeta=''%s'') para eliminar.',
+            16, 1,
+            @idTarjeta, @tipoTarjeta
+        );
+    END
+END;
 GO
 
-EXEC pagos.eliminarMedioDePago 1, 'Debito'
-SELECT * FROM pagos.medioDePago
+EXEC pagos.EliminarTarjetaDisponible 1, 'Debito'
+SELECT * FROM pagos.tarjetaDisponible
 
 -- :::::::::::::::::::::::::::::::::::::::::::: ACTIVIDADES ::::::::::::::::::::::::::::::::::::::::::::
 
@@ -716,7 +743,7 @@ EXEC actividades.eliminarDeporteDisponible @idDeporte = 1
 -- ###### TABLA ACTIVIDAD RECREATIVA ######
 
 --Insertar Actividad Recreativa
-CREATE PROCEDURE actividades.insertarActividadRecreativa (
+CREATE OR ALTER PROCEDURE actividades.insertarActividadRecreativa (
     @descripcion VARCHAR(50),
     @horaInicio VARCHAR(50),
     @horaFin VARCHAR(50),
@@ -776,8 +803,8 @@ EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', -10, 7
 EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, -10;  -- Tarifa invitado negativa
 
 -- Modificar Actividad Recreativa
-CREATE PROCEDURE actividades.modificarActividadRecreativa (
-    @idActividad INT,
+CREATE OR ALTER PROCEDURE actividades.modificarActividadRecreativa (
+    @idSitio INT,
     @descripcion VARCHAR(50),
     @horaInicio VARCHAR(50),
     @horaFin VARCHAR(50),
@@ -786,7 +813,7 @@ CREATE PROCEDURE actividades.modificarActividadRecreativa (
 )
 AS
 BEGIN
-    IF @idActividad IS NULL OR @idActividad <= 0
+    IF @idSitio IS NULL OR @idSitio <= 0
     BEGIN
         RAISERROR('El ID de la actividad debe ser un valor positivo.', 16, 1);
         RETURN;
@@ -823,7 +850,7 @@ BEGIN
         horaFin = @horaFin,
         tarifaSocio = @tarifaSocio,
         tarifaInvitado = @tarifaInvitado
-    WHERE idActividad = @idActividad;
+    WHERE idSitio = @idSitio;
     -- Verificar si se actualizó alguna fila
     IF @@ROWCOUNT = 0
     BEGIN
@@ -847,18 +874,18 @@ EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 60.0
 
 -- Eliminar Actividad Recreativa
 CREATE PROCEDURE actividades.eliminarActividadRecreativa (
-    @idActividad INT
+    @idSitio INT
 )
 AS
 BEGIN
-    IF @idActividad IS NULL OR @idActividad <= 0
+    IF @idSitio IS NULL OR @idSitio <= 0
     BEGIN
         RAISERROR('El ID de la actividad debe ser un valor positivo.', 16, 1);
         RETURN;
     END
     -- Eliminación de la actividad
     DELETE FROM actividades.actividadRecreativa
-    WHERE idActividad = @idActividad;
+    WHERE idSitio = @idSitio;
     
     IF @@ROWCOUNT = 0
     BEGIN
@@ -870,7 +897,7 @@ GO
 
 -- Caso Valido
 DECLARE @ultimaActividad INT;
-SELECT @ultimaActividad = MAX(idActividad) FROM actividades.actividadRecreativa
+SELECT @ultimaActividad = MAX(idSitio) FROM actividades.actividadRecreativa
 EXEC actividades.eliminarActividadRecreativa @ultimaActividad;
 -- Caso Invalido
 EXEC actividades.eliminarActividadRecreativa 9999; -- ID inexistente
@@ -880,62 +907,61 @@ EXEC actividades.eliminarActividadRecreativa 9999; -- ID inexistente
 -- INSERTAR DEPORTE ACTIVO
 
 CREATE OR ALTER PROCEDURE actividades.insertarDeporteActivo
-    @idSocio INT,
-    @idDeporte INT
+    @idSocioActivo INT,
+    @idDeporteActivo INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
 	DECLARE @estadoMembresia VARCHAR(8);
 
-    SET @estadoMembresia = (SELECT s.estadoMembresia FROM socios.socio s WHERE s.idSocio = @idSocio)
-	IF NOT (@estadoMembresia IN ('Activo','Moroso'))
+    SET @estadoMembresia = (SELECT s.estadoMembresia FROM socios.socio s WHERE s.idSocio = @idSocioActivo)
+	IF NOT (@estadoMembresia IN ('ACTIVO','MOROSO - 1ER VENCIMIENTO','MOROSO - 2DO VENCIMIENTO'))
     BEGIN
         RAISERROR('Miembro no válido.', 16, 1);
         RETURN;
     END;
 
-	IF NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte)
+	IF NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible a WHERE a.idDeporte = @idDeporteActivo)
     BEGIN
         RAISERROR('Error: Ese deporte no existe', 16, 1);
         RETURN;
     END
 
-    INSERT INTO actividades.deporteActivo (idSocio, idDeporte, estadoMembresia)
-    VALUES (@idSocio, @idDeporte, @estadoMembresia);
+    INSERT INTO actividades.deporteActivo (idSocioActivo, idDeporteActivo, estadoMembresia)
+    VALUES (@idSocioActivo, @idDeporteActivo, @estadoMembresia);
 END;
 GO
 
-EXEC actividades.insertarDeporteActivo @idSocio = 1, @idDeporte = 1
+EXEC actividades.insertarDeporteActivo @idSocioActivo = 1, @idDeporteActivo = 2
 SELECT * FROM actividades.deporteActivo
 
 -- MODIFICAR DEPORTE ACTIVO
 
 CREATE OR ALTER PROCEDURE actividades.modificarDeporteActivo
     @idDeporteActivo    INT,
-    @idSocio            INT = NULL,
-    @idDeporte          INT = NULL,
+    @idSocioActivo      INT = NULL,
     @estadoMembresia    VARCHAR(8) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
     -- Validaciones
-    IF @estadoMembresia IS NOT NULL AND NOT (@estadoMembresia IN ('Activo', 'Moroso', 'Inactivo'))
+    IF @estadoMembresia IS NOT NULL AND NOT (@estadoMembresia IN ('ACTIVO', 'MOROSO - 1ER VENCIMIENTO', 'MOROSO - 2DO VENCIMIENTO', 'INACTIVO'))
     BEGIN
-        RAISERROR('Error: Estado de membresía debe ser Activo, Moroso o Inactivo.', 16, 1);
+        RAISERROR('Error: Estado de membresía debe ser: ACTIVO, MOROSO - 1ER VENCIMIENTO, MOROSO - 2DO VENCIMIENTO o INACTIVO.', 16, 1);
         RETURN;
     END
 
     -- Validación existencia de socio si se quiere modificar
-    IF @idSocio IS NOT NULL AND NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+    IF @idSocioActivo IS NOT NULL AND NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocioActivo)
     BEGIN
         RAISERROR('Error: El socio especificado no existe.', 16, 1);
         RETURN;
     END
 
     -- Validación existencia de deporte si se quiere modificar
-    IF @idDeporte IS NOT NULL AND NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte)
+    IF @idDeporteActivo IS NOT NULL AND NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporteActivo)
     BEGIN
         RAISERROR('Error: El deporte especificado no existe.', 16, 1);
         RETURN;
@@ -944,8 +970,8 @@ BEGIN
     -- Actualización condicional
     UPDATE actividades.deporteActivo
     SET
-        idSocio         = COALESCE(@idSocio, idSocio),
-        idDeporte       = COALESCE(@idDeporte, idDeporte),
+        idSocioActivo         = COALESCE(@idSocioActivo, idSocioActivo),
+        idDeporteActivo       = COALESCE(@idDeporteActivo, idDeporteActivo),
         estadoMembresia = COALESCE(@estadoMembresia, estadoMembresia)
     WHERE idDeporteActivo = @idDeporteActivo;
 
@@ -957,23 +983,24 @@ BEGIN
 END;
 GO
 
-EXEC actividades.modificarDeporteActivo @idDeporteActivo = 1, @idSocio = 1, @estadoMembresia = 'Activo';
+EXEC actividades.modificarDeporteActivo @idDeporteActivo = 2, @idSocioActivo = 1, @estadoMembresia = 'ACTIVO';
 SELECT * FROM actividades.deporteActivo
 
 -- ELIMINAR DEPORTE ACTIVO
 
-CREATE PROCEDURE actividades.eliminarDeporteActivo
-    @idDeporteActivo INT
+CREATE OR ALTER PROCEDURE actividades.eliminarDeporteActivo
+    @idDeporteActivo INT,
+	@idSocioActivo INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
     DELETE FROM actividades.deporteActivo
-    WHERE idDeporteActivo = @idDeporteActivo;
+    WHERE idDeporteActivo = @idDeporteActivo OR idSocioActivo=@idSocioActivo;
 END;
 GO
 
-EXEC actividades.eliminarDeporteActivo @idDeporteActivo = 1
+EXEC actividades.eliminarDeporteActivo @idDeporteActivo = 1, @idSocioActivo=0
 SELECT * FROM actividades.deporteActivo
 
 -- :::::::::::::::::::::::::::::::::::::::::::: ITINERARIOS ::::::::::::::::::::::::::::::::::::::::::::
@@ -983,15 +1010,15 @@ SELECT * FROM actividades.deporteActivo
 -- INSERTAR ITINERARIO
 
 CREATE OR ALTER PROCEDURE itinerarios.insertarItinerario
-    @dia VARCHAR(9),
+    @dia char(2), --L,M,X,J,V,S,D
     @idDeporte INT,
     @horaInicio TIME,
     @horaFin TIME
 AS
 BEGIN
-    IF NOT (LEN(@dia) >= 5 AND LEN(@dia) <= 9)
+    IF NOT (LEN(@dia) <> 2)
     BEGIN
-        RAISERROR('Error: El día de la semana debe tener entre 5 y 9 letras', 16, 1);
+        RAISERROR('Error: El día de la semana se representa con un caracter', 16, 1);
         RETURN;
     END
 
@@ -1012,7 +1039,7 @@ BEGIN
 END;
 GO
 
-EXEC itinerarios.insertarItinerario @dia = 'Lunes', @idDeporte = 1, @horaInicio = '08:00', @horaFin = '10:00';
+EXEC itinerarios.insertarItinerario @dia ='L', @idDeporte = 2, @horaInicio = '08:00', @horaFin = '10:00';
 
 SELECT *
 FROM itinerarios.itinerario
@@ -1021,7 +1048,7 @@ FROM itinerarios.itinerario
 
 CREATE OR ALTER PROCEDURE itinerarios.modificarItinerario
     @idItinerario INT,
-    @dia VARCHAR(9) = NULL,
+    @dia CHAR(2) = NULL,
     @idDeporte INT = NULL,
     @horaInicio TIME = NULL,
     @horaFin TIME = NULL
@@ -1030,9 +1057,9 @@ BEGIN
     SET NOCOUNT ON;
 
     -- Validar día
-    IF @dia IS NOT NULL AND NOT (LEN(@dia) >= 5 AND LEN(@dia) <= 9)
+    IF @dia IS NOT NULL AND NOT (LEN(@dia) <>2)
     BEGIN
-        RAISERROR('Error: El día de la semana debe tener entre 5 y 9 letras', 16, 1);
+        RAISERROR('Error: El día de la semana debe tener solo un caracter', 16, 1);
         RETURN;
     END
 
@@ -1096,31 +1123,28 @@ EXEC itinerarios.eliminarItinerario @idItinerario = 1;
 SELECT *
 FROM itinerarios.itinerario
 
-CREATE PROCEDURE pagos.ActualizarEstadoMembresia
+CREATE OR ALTER PROCEDURE pagos.ActualizarEstadoMembresia
 AS
 BEGIN
-    -- Evita mensajes adicionales de filas afectadas, mejorando el rendimiento:contentReference[oaicite:0]{index=0}
-    SET NOCOUNT ON;  
-    
     -- 1) Actualizar registros morosos de 1er vencimiento (fechaActual > vencimiento+5 AND <= vencimiento+10)
-    UPDATE pagos.estadoMorosidad
+    UPDATE socios.socio
     SET estadoMembresia = 'MOROSO - 1ER VENCIMIENTO'
     WHERE GETDATE() > DATEADD(DAY, 5, fechaVencimientoMembresia)
       AND GETDATE() <= DATEADD(DAY, 10, fechaVencimientoMembresia);
 
     -- 2) Actualizar registros morosos de 2do vencimiento (fechaActual > vencimiento+10 AND <= vencimiento+15)
-    UPDATE pagos.estadoMorosidad
+    UPDATE socios.socio
     SET estadoMembresia = 'MOROSO - 2DO VENCIMIENTO'
     WHERE GETDATE() > DATEADD(DAY, 10, fechaVencimientoMembresia)
       AND GETDATE() <= DATEADD(DAY, 15, fechaVencimientoMembresia);
 
     -- 3) Actualizar registros inactivos (fechaActual > vencimiento+15)
-    UPDATE pagos.estadoMorosidad
+    UPDATE socios.socio
     SET estadoMembresia = 'INACTIVO'
     WHERE GETDATE() > DATEADD(DAY, 15, fechaVencimientoMembresia);
 
     -- 4) Actualizar registros activos (fechaActual <= vencimiento)
-    UPDATE pagos.estadoMorosidad
+    UPDATE socios.socio
     SET estadoMembresia = 'ACTIVO'
     WHERE GETDATE() <= fechaVencimientoMembresia;
 END;
