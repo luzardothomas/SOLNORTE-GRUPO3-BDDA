@@ -169,7 +169,7 @@ CREATE TABLE socios.rolDisponible (
 );
 GO
 
--- 10. actividades.deporteActivo
+-- 11. actividades.deporteActivo
 CREATE TABLE actividades.deporteActivo (
     idSocioActivo INT NOT NULL,
     idDeporteActivo INT NOT NULL,
@@ -180,7 +180,7 @@ CREATE TABLE actividades.deporteActivo (
 );
 GO
 
--- 11. itinerarios.itinerario
+-- 12. itinerarios.itinerario
 CREATE TABLE itinerarios.itinerario (
     idItinerario INT PRIMARY KEY IDENTITY(1,1),
     dia VARCHAR(9) NOT NULL,
@@ -191,7 +191,7 @@ CREATE TABLE itinerarios.itinerario (
 );
 GO
 
--- 12. pagos.tarjetasEnUso
+-- 13. pagos.tarjetasEnUso
 CREATE TABLE pagos.tarjetasEnUso (
 	idSocio int NOT NULL,
     idTarjetaEnUso INT NOT NULL,
@@ -203,7 +203,7 @@ CREATE TABLE pagos.tarjetasEnUso (
 );
 GO
 
--- 13. coberturas.prepagaEnUso
+-- 14. coberturas.prepagaEnUso
 CREATE TABLE coberturas.prepagaEnUso (
     idSocio INT IDENTITY(1,1),
     numeroPrepagaSocio INT NOT NULL,  
@@ -214,7 +214,7 @@ CREATE TABLE coberturas.prepagaEnUso (
 );
 GO
 
--- 14. descuentos.descuentoVigente
+-- 15. descuentos.descuentoVigente
 CREATE TABLE descuentos.descuentoVigente (
     idDescuento INT,
     idSocio INT,
@@ -224,7 +224,7 @@ CREATE TABLE descuentos.descuentoVigente (
 );
 GO
 
--- 15. socios.rolVigente
+-- 16. socios.rolVigente
 CREATE TABLE socios.rolVigente (
     idRol INT NOT NULL CHECK (idRol > 0),
     idSocio INT NOT NULL CHECK (idSocio > 0),
@@ -234,7 +234,7 @@ CREATE TABLE socios.rolVigente (
 );
 GO
 
--- 16. pagos.facturaCobro
+-- 17. pagos.facturaCobro
 GO
 CREATE TABLE pagos.facturaCobro (
     idFactura INT PRIMARY KEY IDENTITY(1,1),
@@ -244,6 +244,7 @@ CREATE TABLE pagos.facturaCobro (
     direccion VARCHAR(100) NOT NULL,
     tipoCobro VARCHAR(25) NOT NULL,
     numeroCuota INT NOT NULL CHECK (numeroCuota > 0),
+	cuotaMaxima INT NOT NULL CHECK (cuotaMaxima > 0),
 	cantidadDeportes SMALLINT NOT NULL CHECK (cantidadDeportes > 0),
     importeBruto DECIMAL(10, 2) NOT NULL CHECK (importeBruto > 0),
     importeTotal DECIMAL(10, 2) NOT NULL CHECK (importeTotal > 0),
@@ -251,7 +252,7 @@ CREATE TABLE pagos.facturaCobro (
 );
 GO
 
--- 17. pagos.reembolso
+-- 18. pagos.reembolso
 CREATE TABLE pagos.reembolso (
     idFacturaReembolso INT NOT NULL IDENTITY(1,1),
     idFacturaOriginal INT NOT NULL,
