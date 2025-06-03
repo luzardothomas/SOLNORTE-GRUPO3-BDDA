@@ -76,21 +76,7 @@ CREATE TABLE socios.grupoFamiliar (
 );
 GO
 
--- 2. socios.gruposFamiliaresActivos
-CREATE TABLE socios.gruposFamiliaresActivos (
-    idGrupoFamiliar INT NOT NULL,
-	idSocio INT NOT NULL,
-	parentescoGrupoFamiliar SMALLINT
-	CONSTRAINT PKGrupos PRIMARY KEY (idGrupoFamiliar, idSocio),
-	FOREIGN KEY (idGrupoFamiliar) REFERENCES socios.grupoFamiliar(idGrupoFamiliar),
-	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
-);
-GO
-
-
--- 3. socios.socio
-
-
+-- 2. socios.socio
 CREATE TABLE socios.socio (
     idSocio INT PRIMARY KEY IDENTITY(1,1),
     dni BIGINT NOT NULL CHECK (dni > 0),
@@ -109,6 +95,17 @@ CREATE TABLE socios.socio (
     direccion VARCHAR(25),
 	idGrupo INT,
 	FOREIGN KEY (idGrupo) REFERENCES socios.grupoFamiliar(idGrupoFamiliar)
+);
+GO
+
+-- 3. socios.gruposFamiliaresActivos
+CREATE TABLE socios.gruposFamiliaresActivos (
+    idGrupoFamiliar INT NOT NULL,
+	idSocio INT NOT NULL,
+	parentescoGrupoFamiliar SMALLINT
+	CONSTRAINT PKGrupos PRIMARY KEY (idGrupoFamiliar, idSocio),
+	FOREIGN KEY (idGrupoFamiliar) REFERENCES socios.grupoFamiliar(idGrupoFamiliar),
+	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
 );
 GO
 
