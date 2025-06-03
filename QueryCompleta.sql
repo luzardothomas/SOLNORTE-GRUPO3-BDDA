@@ -17,6 +17,16 @@ GO
 USE SolNorte_Grupo3;
 GO
 
+DROP SCHEMA socios;
+
+DROP SCHEMA pagos;
+
+DROP SCHEMA descuentos;
+
+DROP SCHEMA intinerarios;
+
+DROP SCHEMA coberturas;
+
 -- Creación de esquemas para las diferentes gestiones
 CREATE SCHEMA socios;
 GO
@@ -38,38 +48,62 @@ GO
 
 -- Creación de tablas
 
--- 1. socios.socio
+-- 1. socios.grupoFamiliar
+
+CREATE TABLE socios.grupoFamiliar (
+    idGrupoFamiliar INT PRIMARY KEY IDENTITY(1,1),
+	cantidadGrupoFamiliar SMALLINT
+);
+GO
+
+-- 2. socios.gruposFamiliaresActivos
+CREATE TABLE socios.gruposFamiliaresActivos (
+    idGrupoFamiliar INT NOT NULL,
+	idSocio INT NOT NULL,
+	parentescoGrupoFamiliar SMALLINT
+	CONSTRAINT PKGrupos PRIMARY KEY (idGrupoFamiliar, idSocio),
+	FOREIGN KEY (idGrupoFamiliar) REFERENCES socios.grupoFamiliar(idGrupoFamiliar),
+	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
+);
+GO
+
+
+-- 3. socios.socio
+
+
 CREATE TABLE socios.socio (
     idSocio INT PRIMARY KEY IDENTITY(1,1),
     dni BIGINT NOT NULL CHECK (dni > 0),
     cuil BIGINT NOT NULL CHECK (cuil > 0),
-    nombre VARCHAR(100) NOT NULL,
-    apellido VARCHAR(100) NOT NULL,
-    email VARCHAR(100),
-    telefono VARCHAR(14),
+    nomyap varchar(30) NOT NULL,
+    email VARCHAR(30),
+    telefono CHAR(14),
     fechaNacimiento DATE,
     fechaDeVigenciaContrasenia DATE,
-    contactoDeEmergencia VARCHAR(14),
-    usuario VARCHAR(50) UNIQUE,
+	fechaVencimientoMembresia DATE,
+	estadoMembresia varchar (25) CHECK (estadoMembresia='ACTIVO' OR estadoMembresia='MOROSO - 1ER VENCIMIENTO' OR estadoMembresia='MOROSO - 2DO VENCIMIENTO' OR estadoMembresia='INACTIVO'),
+    contactoDeEmergencia CHAR(14),
+    usuario VARCHAR(25) UNIQUE,
     contrasenia VARCHAR(10),
-    estadoMembresia VARCHAR(8) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso', 'Inactivo')),
     saldoAFavor DECIMAL(10, 2) CHECK (saldoAFavor >= 0),
-    direccion VARCHAR(100)
+    direccion VARCHAR(25),
+	idGrupo INT,
+	FOREIGN KEY (idGrupo) REFERENCES socios.grupoFamiliar(idGrupoFamiliar)
 );
 GO
 
--- 2. actividades.actividadRecreativa
+-- 4. actividades.actividadRecreativa
 CREATE TABLE actividades.actividadRecreativa (
-    idActividad INT PRIMARY KEY IDENTITY(1,1),
+    idSitio INT PRIMARY KEY IDENTITY(1,1),
     descripcion VARCHAR(50) NOT NULL,
-    horaInicio VARCHAR(50) NOT NULL,
-    horaFin VARCHAR(50) NOT NULL,
+    horaInicio TIME NOT NULL,
+    horaFin TIME NOT NULL,
     tarifaSocio DECIMAL(10, 2) CHECK (tarifaSocio > 0) NOT NULL,
     tarifaInvitado DECIMAL(10, 2) CHECK (tarifaInvitado > 0) NOT NULL
 );
 GO
 
--- 3. actividades.deporteDisponible
+-- 5. actividades.deporteDisponible
 CREATE TABLE actividades.deporteDisponible (
     idDeporte INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(50) NOT NULL,
@@ -78,16 +112,16 @@ CREATE TABLE actividades.deporteDisponible (
 );
 GO
 
--- 4. pagos.medioDePago
-CREATE TABLE pagos.medioDePago (
-    idMedioDePago INT NOT NULL,
-    tipoMedioDePago VARCHAR(50) NOT NULL,
+-- 6. pagos.medioDePago
+CREATE TABLE pagos.tarjetaDisponible (
+    idTarjeta INT NOT NULL,
+    tipoTarjeta VARCHAR(50) NOT NULL,
     descripcion VARCHAR(50) NOT NULL,
-    CONSTRAINT PKMediosDePago PRIMARY KEY (idMedioDePago, tipoMedioDePago)
+    CONSTRAINT PKMediosDePago PRIMARY KEY (idTarjeta, tipoTarjeta)
 );
 GO
 
--- 5. coberturas.coberturaDisponible
+-- 7. coberturas.coberturaDisponible
 CREATE TABLE coberturas.coberturaDisponible (
     idCoberturaDisponible INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(100) NOT NULL,
@@ -95,15 +129,15 @@ CREATE TABLE coberturas.coberturaDisponible (
 );
 GO
 
--- 6. socios.categoriaSocio
+-- 8. socios.categoriaSocio
 CREATE TABLE socios.categoriaSocio (
     idCategoria INT PRIMARY KEY IDENTITY(1,1),
-    tipo VARCHAR(50) NOT NULL,
+    tipo VARCHAR(50) CHECK (tipo='MENOR' OR tipo='CADETE' or tipo='MAYOR'),
     costoMembresia DECIMAL(10, 2) NOT NULL CHECK (costoMembresia > 0)
 );
 GO
 
--- 7. descuentos.descuentoDisponible
+-- 9. descuentos.descuentoDisponible
 CREATE TABLE descuentos.descuentoDisponible (
     idDescuento INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(100) NOT NULL,
@@ -111,32 +145,21 @@ CREATE TABLE descuentos.descuentoDisponible (
 );
 GO
 
--- 8. socios.tutorACargo
-CREATE TABLE socios.tutorACargo (
-    dniTutor BIGINT CHECK (dniTutor > 0) PRIMARY KEY,
-    nombre VARCHAR(100) NOT NULL,
-    apellido VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE,
-    telefono VARCHAR(11),
-    parentescoConMenor VARCHAR(10)
-);
-GO
-
--- 9. socios.rolDisponible
+-- 10. socios.rolDisponible
 CREATE TABLE socios.rolDisponible (
     idRol INT NOT NULL CHECK (idRol > 0) PRIMARY KEY,
-    descripcion VARCHAR(50) NOT NULL
+    descripcion VARCHAR(25) NOT NULL
 );
 GO
 
 -- 10. actividades.deporteActivo
 CREATE TABLE actividades.deporteActivo (
-    idDeporteActivo INT PRIMARY KEY IDENTITY(1,1),
-    idSocio INT NOT NULL,
-    idDeporte INT NOT NULL,
+    idSocioActivo INT NOT NULL,
+    idDeporteActivo INT NOT NULL,
     estadoMembresia VARCHAR(8) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso', 'Inactivo')),
-    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
-    FOREIGN KEY (idDeporte) REFERENCES actividades.deporteDisponible(idDeporte)
+    FOREIGN KEY (idSocioActivo) REFERENCES socios.socio(idSocio),
+    FOREIGN KEY (idDeporteActivo) REFERENCES actividades.deporteDisponible(idDeporte),
+	CONSTRAINT PKDeportesActivos PRIMARY KEY (idSocioActivo, idDeporteActivo)
 );
 GO
 
@@ -145,31 +168,32 @@ CREATE TABLE itinerarios.itinerario (
     idItinerario INT PRIMARY KEY IDENTITY(1,1),
     dia VARCHAR(9) NOT NULL,
     idDeporte INT NOT NULL,
-    horaInicio VARCHAR(50) NOT NULL,
-    horaFin VARCHAR(50) NOT NULL,
+    horaInicio TIME NOT NULL,
+    horaFin TIME NOT NULL,
     FOREIGN KEY (idDeporte) REFERENCES actividades.deporteDisponible(idDeporte)
 );
 GO
 
--- 12. pagos.medioEnUso
-CREATE TABLE pagos.medioEnUso (
-    idSocio INT NOT NULL,
-    idMedioDePago INT NOT NULL,
-    tipoMedioDePago VARCHAR(50) NOT NULL,
-    numeroTarjeta BIGINT CHECK (numeroTarjeta > 0),
-    CONSTRAINT PKMedioEnUso PRIMARY KEY (idSocio, idMedioDePago, tipoMedioDePago),
+-- 12. pagos.tarjetasEnUso
+CREATE TABLE pagos.tarjetasEnUso (
+	idSocio int NOT NULL,
+    idTarjetaEnUso INT NOT NULL,
+    tipoTarjetaEnUso VARCHAR(50) NOT NULL,
+    numeroTarjetaEnUso BIGINT CHECK (numeroTarjetaEnUso > 0),
+    CONSTRAINT PKMedioEnUso PRIMARY KEY (idSocio, idTarjetaEnUso, tipoTarjetaEnUso),
     FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
-    FOREIGN KEY (idMedioDePago, tipoMedioDePago) REFERENCES pagos.medioDePago(idMedioDePago, tipoMedioDePago)
+    FOREIGN KEY (idTarjetaEnUso, tipoTarjetaEnUso) REFERENCES pagos.tarjetaDisponible(idTarjeta, tipoTarjeta)
 );
 GO
 
 -- 13. coberturas.prepagaEnUso
 CREATE TABLE coberturas.prepagaEnUso (
-    idPrepaga INT PRIMARY KEY IDENTITY(1,1),
-    idNumeroSocio INT NOT NULL,  
+    idSocio INT IDENTITY(1,1),
+    numeroPrepagaSocio INT NOT NULL,  
     idCobertura INT NOT NULL,
-    FOREIGN KEY (idNumeroSocio) REFERENCES socios.socio(idSocio),
-    FOREIGN KEY (idCobertura) REFERENCES coberturas.coberturaDisponible(idCoberturaDisponible)
+    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
+    FOREIGN KEY (idCobertura) REFERENCES coberturas.coberturaDisponible(idCoberturaDisponible),
+	CONSTRAINT PKPrepaga PRIMARY KEY (idSocio, idCobertura)
 );
 GO
 
@@ -194,22 +218,19 @@ CREATE TABLE socios.rolVigente (
 GO
 
 -- 16. pagos.facturaCobro
+GO
 CREATE TABLE pagos.facturaCobro (
     idFactura INT PRIMARY KEY IDENTITY(1,1),
-	idSocio INT,
     fechaEmision DATE DEFAULT GETDATE(),
-    fechaPrimerVencimiento DATE NOT NULL,
-    fechaSegundoVencimiento DATE NOT NULL,
     cuitDeudor INT NOT NULL,
-    idMedioDePago INT NOT NULL,
-    tipoMedioDePago VARCHAR(50) NOT NULL,
+	medioDePagoUsado varchar(25),
     direccion VARCHAR(100) NOT NULL,
     tipoCobro VARCHAR(25) NOT NULL,
     numeroCuota INT NOT NULL CHECK (numeroCuota > 0),
-    servicioPagado VARCHAR(50) NOT NULL,
+	cantidadDeportes SMALLINT NOT NULL CHECK (cantidadDeportes > 0),
     importeBruto DECIMAL(10, 2) NOT NULL CHECK (importeBruto > 0),
     importeTotal DECIMAL(10, 2) NOT NULL CHECK (importeTotal > 0),
-    CONSTRAINT FKFacturaCobro FOREIGN KEY (idSocio,idMedioDePago, tipoMedioDePago) REFERENCES pagos.medioEnUso(idSocio,idMedioDePago, tipoMedioDePago)
+	detalle varchar(100) NOT NULL
 );
 GO
 
@@ -219,13 +240,10 @@ CREATE TABLE pagos.reembolso (
     idFacturaOriginal INT NOT NULL,
     montoReembolsado DECIMAL(10, 2) NOT NULL CHECK (montoReembolsado > 0),
     cuitDestinatario BIGINT NOT NULL CHECK (cuitDestinatario > 0),
-    medioDePago VARCHAR(50) NOT NULL,
+    medioDePagoUsado VARCHAR(25) NOT NULL,
     CONSTRAINT PKReembolso PRIMARY KEY (idFacturaReembolso, idFacturaOriginal),
     CONSTRAINT FKReembolso FOREIGN KEY (idFacturaOriginal) REFERENCES pagos.facturaCobro(idFactura)
 );
-GO
-
-USE SolNorte_Grupo3
 GO
 
 -- :::::::::::::::::::::::::::::::::::::::::::: SOCIOS ::::::::::::::::::::::::::::::::::::::::::::
@@ -234,279 +252,147 @@ GO
 
 -- INSERTAR SOCIO
 
-CREATE OR ALTER PROCEDURE socios.insertarSocio
-    @dni BIGINT,
-    @cuil BIGINT,
-    @nombre VARCHAR(100),
-    @apellido VARCHAR(100),
-    @email VARCHAR(100) = NULL,
-    @telefono VARCHAR(14) = NULL,
-    @fechaNacimiento DATE = NULL,
-    @fechaDeVigenciaContrasenia DATE = NULL,
-    @contactoDeEmergencia VARCHAR(14) = NULL,
-    @usuario VARCHAR(50) = NULL,
-    @contrasenia VARCHAR(10) = NULL,
-    @estadoMembresia VARCHAR(8),
-    @saldoAFavor DECIMAL(10,2) = NULL,
-	@direccion VARCHAR(100) = NULL
-AS
-BEGIN
-
-	IF NOT (@dni >= 4000000 AND @dni <= 99999999)
-	BEGIN
-		RAISERROR('Error: DNI fuera de rango (4.000.000 - 99.999.999)', 16, 1);
-		RETURN;
-	END
-
-	IF NOT (@cuil >= 2040000001 AND @cuil <= 27999999999)
-	BEGIN
-		RAISERROR('Error: CUIL fuera de rango (2.040.000.001 - 27.999.999.999)', 16, 1);
-		RETURN;
-	END
-
-	IF NOT (LEN(@nombre) >= 3)
-	BEGIN
-		RAISERROR('Error: Nombre debe tener al menos 3 caracteres', 16, 1);
-		RETURN;
-	END
-
-	IF NOT (LEN(@apellido) >= 3)
-	BEGIN
-		RAISERROR('Error: Apellido debe tener al menos 3 caracteres', 16, 1);
-		RETURN;
-	END
-
-	IF NOT (@email LIKE '_%@_%._%' OR @email IS NULL)
-	BEGIN
-		RAISERROR('Error: Email no válido o es NULL', 16, 1);
-		RETURN;
-	END
-
-	IF NOT ((LEN(@telefono) >= 10 AND LEN(@telefono) <= 14) OR  @telefono IS NULL)
-	BEGIN
-		RAISERROR('Error: Teléfono debe tener al menos 10 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-	IF NOT ((@fechaNacimiento >= '1920-01-01' AND @fechaNacimiento <= GETDATE()) OR @fechaNacimiento IS NULL)
-	BEGIN
-		RAISERROR('Error: Fecha de nacimiento fuera de rango o es NULL', 16, 1);
-		RETURN;
-	END
-
-	IF NOT (@fechaDeVigenciaContrasenia > GETDATE() OR @fechaDeVigenciaContrasenia IS NULL)
-	BEGIN
-		RAISERROR('Error: Fecha de vigencia de contraseña inválida o es NULL', 16, 1);
-		RETURN;
-	END
-
-	IF NOT ((LEN(@contactoDeEmergencia) >= 10 AND LEN(@contactoDeEmergencia) <= 14) OR @contactoDeEmergencia IS NULL)
-	BEGIN
-		RAISERROR('Error: Contacto de emergencia debe tener al menos 10 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-	IF NOT (LEN(@usuario) >= 3 OR @usuario IS NULL)
-	BEGIN
-		RAISERROR('Error: Usuario debe tener al menos 3 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-	IF NOT ((LEN(@contrasenia) >= 5 AND LEN(@contrasenia) <= 10) OR @contrasenia IS NULL)
-	BEGIN
-		RAISERROR('Error: Contraseña debe tener entre 5 y 10 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-	IF NOT (@estadoMembresia IN ('Activo', 'Moroso', 'Inactivo'))
-	BEGIN
-		RAISERROR('Error: Estado de membresía inválido', 16, 1);
-		RETURN;
-	END
-
-	IF NOT (@saldoAFavor >= 0 OR @saldoAFavor IS NULL)
-	BEGIN
-		RAISERROR('Error: Saldo a favor debe ser mayor o igual a cero o NULL', 16, 1);
-		RETURN;
-	END
-
-	IF NOT ((LEN(@direccion) >= 3 AND LEN(@direccion) <= 100) OR @direccion IS NULL)
-	BEGIN
-		RAISERROR('Error: Dirección debe tener entre 3 y 100 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-    INSERT INTO socios.socio
-        (dni, cuil, nombre, apellido, email, telefono,
-         fechaNacimiento, fechaDeVigenciaContrasenia, contactoDeEmergencia,
-         usuario, contrasenia, estadoMembresia, saldoAFavor, direccion)
-    VALUES
-        (@dni, @cuil, @nombre, @apellido, @email, @telefono,
-         @fechaNacimiento, @fechaDeVigenciaContrasenia, @contactoDeEmergencia,
-         @usuario, @contrasenia, @estadoMembresia, @saldoAFavor, @direccion);
-
-END
-GO
-
--- MODIFICAR SOCIO
-
-CREATE OR ALTER PROCEDURE socios.modificarSocio
-    @idSocio                    INT,
-    @dni                        BIGINT        = NULL,
-    @cuil                       BIGINT        = NULL,
-    @nombre                     VARCHAR(100)  = NULL,
-    @apellido                   VARCHAR(100)  = NULL,
-    @email                      VARCHAR(100)  = NULL,
-    @telefono                   VARCHAR(14)   = NULL,
-    @fechaNacimiento            DATE          = NULL,
-    @fechaDeVigenciaContrasenia DATE          = NULL,
-    @contactoDeEmergencia       VARCHAR(14)   = NULL,
-    @usuario                    VARCHAR(50)   = NULL,
-    @contrasenia                VARCHAR(10)   = NULL,
-    @estadoMembresia            VARCHAR(8)    = NULL,
-    @saldoAFavor                DECIMAL(10,2) = NULL,
-    @direccion                  VARCHAR(100)  = NULL
+CREATE PROCEDURE [socios].[InsertarSocio]
+    @dni                       BIGINT,
+    @cuil                      BIGINT,
+    @nomyap                    VARCHAR(30),
+    @email                     VARCHAR(30)      = NULL,
+    @telefono                  CHAR(14)         = NULL,
+    @fechaNacimiento           DATE             = NULL,
+    @fechaDeVigenciaContrasenia DATE            = NULL,
+    @contactoDeEmergencia      CHAR(14)         = NULL,
+    @idGrupoFamiliar           INT              = NULL,
+    @usuario                   VARCHAR(25)      = NULL,
+    @contrasenia               VARCHAR(10)      = NULL,
+    @saldoAFavor               DECIMAL(10,2)    = 0,
+    @direccion                 VARCHAR(25)      = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-	IF @dni IS NOT NULL AND NOT (@dni >= 4000000 AND @dni <= 99999999)
-	BEGIN
-		RAISERROR('Error: DNI fuera de rango (4.000.000 - 99.999.999)', 16, 1);
-		RETURN;
-	END
+    /*
+    -- Insertamos un nuevo registro en socios.socio. 
+    -- ‘estadoMembresia’ queda por defecto en 'ACTIVO' y 
+    -- ‘fechaVencimientoMembresia’ se calcula como un mes después de hoy.
+    */
+    INSERT INTO socios.socio (
+        dni,
+        cuil,
+        nomyap,
+        email,
+        telefono,
+        fechaNacimiento,
+        fechaDeVigenciaContrasenia,
+        fechaVencimientoMembresia,
+        estadoMembresia,
+        contactoDeEmergencia,
+        idGrupoFamiliar,
+        usuario,
+        contrasenia,
+        saldoAFavor,
+        direccion
+    )
+    VALUES (
+        @dni,
+        @cuil,
+        @nomyap,
+        @email,
+        @telefono,
+        @fechaNacimiento,
+        @fechaDeVigenciaContrasenia,
+        DATEADD(MONTH, 1, CAST(GETDATE() AS DATE)),
+        'ACTIVO',
+        @contactoDeEmergencia,
+        @idGrupoFamiliar,
+        @usuario,
+        @contrasenia,
+        @saldoAFavor,
+        @direccion
+    );
 
-	IF @cuil IS NOT NULL AND NOT (@cuil >= 2040000001 AND @cuil <= 27999999999)
-	BEGIN
-		RAISERROR('Error: CUIL fuera de rango (2.040.000.001 - 27.999.999.999)', 16, 1);
-		RETURN;
-	END
-
-	IF @nombre IS NOT NULL AND NOT (LEN(@nombre) >= 3)
-	BEGIN
-		RAISERROR('Error: Nombre debe tener al menos 3 caracteres', 16, 1);
-		RETURN;
-	END
-
-	IF @apellido IS NOT NULL AND NOT (LEN(@apellido) >= 3)
-	BEGIN
-		RAISERROR('Error: Apellido debe tener al menos 3 caracteres', 16, 1);
-		RETURN;
-	END
-
-	IF @email IS NOT NULL AND NOT (@email LIKE '_%@_%._%')
-	BEGIN
-		RAISERROR('Error: Email no válido o es NULL', 16, 1);
-		RETURN;
-	END
-
-	IF @telefono IS NOT NULL AND NOT ((LEN(@telefono) >= 10 AND LEN(@telefono) <= 14))
-	BEGIN
-		RAISERROR('Error: Teléfono debe tener al menos 10 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-	IF @fechaNacimiento IS NOT NULL AND NOT ((@fechaNacimiento >= '1920-01-01' AND @fechaNacimiento <= GETDATE()))
-	BEGIN
-		RAISERROR('Error: Fecha de nacimiento fuera de rango o es NULL', 16, 1);
-		RETURN;
-	END
-
-	IF @fechaDeVigenciaContrasenia IS NOT NULL AND NOT (@fechaDeVigenciaContrasenia > GETDATE() OR @fechaDeVigenciaContrasenia IS NULL)
-	BEGIN
-		RAISERROR('Error: Fecha de vigencia de contraseña inválida o es NULL', 16, 1);
-		RETURN;
-	END
-
-	IF @contactoDeEmergencia IS NOT NULL AND NOT ((LEN(@contactoDeEmergencia) >= 10 AND LEN(@contactoDeEmergencia) <= 14))
-	BEGIN
-		RAISERROR('Error: Contacto de emergencia debe tener al menos 10 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-	IF @usuario IS NOT NULL AND NOT (LEN(@usuario) >= 3)
-	BEGIN
-		RAISERROR('Error: Usuario debe tener al menos 3 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-	IF @contrasenia IS NOT NULL AND NOT ((LEN(@contrasenia) >= 5 AND LEN(@contrasenia) <= 10))
-	BEGIN
-		RAISERROR('Error: Contraseña debe tener entre 5 y 10 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-	IF @estadoMembresia IS NOT NULL AND NOT (@estadoMembresia IN ('Activo', 'Moroso', 'Inactivo'))
-	BEGIN
-		RAISERROR('Error: Estado de membresía inválido', 16, 1);
-		RETURN;
-	END
-
-	IF @saldoAFavor IS NOT NULL AND NOT (@saldoAFavor >= 0)
-	BEGIN
-		RAISERROR('Error: Saldo a favor debe ser mayor o igual a cero o NULL', 16, 1);
-		RETURN;
-	END
-
-	IF @direccion IS NOT NULL AND NOT ((LEN(@direccion) >= 3 AND LEN(@direccion) <= 100))
-	BEGIN
-		RAISERROR('Error: Dirección debe tener entre 3 y 100 caracteres o ser NULL', 16, 1);
-		RETURN;
-	END
-
-    UPDATE socios.socio
-    SET
-        dni                       = COALESCE(@dni, dni),
-        cuil                      = COALESCE(@cuil, cuil),
-        nombre                    = COALESCE(@nombre, nombre),
-        apellido                  = COALESCE(@apellido, apellido),
-        email                     = COALESCE(@email, email),
-        telefono                  = COALESCE(@telefono, telefono),
-        fechaNacimiento           = COALESCE(@fechaNacimiento, fechaNacimiento),
-        fechaDeVigenciaContrasenia= COALESCE(@fechaDeVigenciaContrasenia, fechaDeVigenciaContrasenia),
-        contactoDeEmergencia      = COALESCE(@contactoDeEmergencia, contactoDeEmergencia),
-        usuario                   = COALESCE(@usuario, usuario),
-        contrasenia               = COALESCE(@contrasenia, contrasenia),
-        estadoMembresia           = COALESCE(@estadoMembresia, estadoMembresia),
-        saldoAFavor               = COALESCE(@saldoAFavor, saldoAFavor),
-        direccion                 = COALESCE(@direccion, direccion)
-    WHERE idSocio = @idSocio;
-
-    IF @@ROWCOUNT = 0
-    BEGIN
-        RAISERROR('No existe un socio con idSocio = %d.', 16, 1, @idSocio);
-    END
+    /*
+    -- (Opcional) Devolver el ID generado del nuevo socio
+    */
+    SELECT SCOPE_IDENTITY() AS NuevoIdSocio;
 END;
 GO
 
+
+-- MODIFICAR SOCIO
+
+CREATE PROCEDURE [socios].[ModificarSocio]
+    @idSocio                   INT,
+    @dni                       BIGINT            = NULL,
+    @cuil                      BIGINT            = NULL,
+    @nomyap                    VARCHAR(30)       = NULL,
+    @email                     VARCHAR(30)       = NULL,
+    @telefono                  CHAR(14)          = NULL,
+    @fechaNacimiento           DATE              = NULL,
+    @fechaDeVigenciaContrasenia DATE             = NULL,
+    @fechaVencimientoMembresia DATE              = NULL,
+    @estadoMembresia           VARCHAR(25)       = NULL,
+    @contactoDeEmergencia      CHAR(14)          = NULL,
+    @idGrupoFamiliar           INT               = NULL,
+    @usuario                   VARCHAR(25)       = NULL,
+    @contrasenia               VARCHAR(10)       = NULL,
+    @saldoAFavor               DECIMAL(10,2)     = NULL,
+    @direccion                 VARCHAR(25)       = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    /*
+    -- Actualizamos únicamente aquellos campos para los cuales
+    -- se haya pasado un valor NO nulo. Si el parámetro es NULL,
+    -- se mantiene el valor previo en la fila.
+    */
+    UPDATE socios.socio
+    SET
+        dni                       = COALESCE(@dni,                       dni),
+        cuil                      = COALESCE(@cuil,                      cuil),
+        nomyap                    = COALESCE(@nomyap,                    nomyap),
+        email                     = COALESCE(@email,                     email),
+        telefono                  = COALESCE(@telefono,                  telefono),
+        fechaNacimiento           = COALESCE(@fechaNacimiento,           fechaNacimiento),
+        fechaDeVigenciaContrasenia = COALESCE(@fechaDeVigenciaContrasenia, fechaDeVigenciaContrasenia),
+        fechaVencimientoMembresia = COALESCE(@fechaVencimientoMembresia, fechaVencimientoMembresia),
+        estadoMembresia           = COALESCE(@estadoMembresia,           estadoMembresia),
+        contactoDeEmergencia      = COALESCE(@contactoDeEmergencia,      contactoDeEmergencia),
+        idGrupoFamiliar           = COALESCE(@idGrupoFamiliar,           idGrupoFamiliar),
+        usuario                   = COALESCE(@usuario,                   usuario),
+        contrasenia               = COALESCE(@contrasenia,               contrasenia),
+        saldoAFavor               = COALESCE(@saldoAFavor,               saldoAFavor),
+        direccion                 = COALESCE(@direccion,                 direccion)
+    WHERE idSocio = @idSocio;
+
+    /*
+    -- Si no existe el idSocio, podemos opcionalmente informar:
+    IF @@ROWCOUNT = 0
+    BEGIN
+        RAISERROR('No existe ningún socio con idSocio = %d.', 16, 1, @idSocio);
+    END
+    */
+END;
+GO
 -- ELIMINAR SOCIO
 
-CREATE OR ALTER PROCEDURE socios.eliminarSocio
+CREATE PROCEDURE [socios].[EliminarSocio]
     @idSocio INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
-	DECLARE @estadoMembresia VARCHAR(8) = (SELECT s.estadoMembresia FROM socios.socio s WHERE idSocio = @idSocio);
+    DELETE FROM socios.socio
+    WHERE idSocio = @idSocio;
 
-	IF @estadoMembresia IN('Moroso','Activo')
-	BEGIN
-		UPDATE socios.socio
-		SET estadoMembresia = 'Inactivo'
-		WHERE idSocio = @idSocio
-	END
-	ELSE
-	BEGIN
-		DELETE FROM socios.socio
-		WHERE idSocio = @idSocio;
-    
-		IF @@ROWCOUNT = 0
-		BEGIN
-			RAISERROR('No se encontró ningún socio con id = %d', 16, 1, @idSocio);
-		END
-	END
-
-END
+    /*
+    -- (Opcional) Verificar si se eliminó alguna fila:
+    IF @@ROWCOUNT = 0
+    BEGIN
+        RAISERROR('No existe ningún socio con idSocio = %d.', 16, 1, @idSocio);
+    END
+    */
+END;
 GO
 
 
@@ -1332,3 +1218,32 @@ EXEC itinerarios.eliminarItinerario @idItinerario = 1;
 
 SELECT *
 FROM itinerarios.itinerario
+
+CREATE PROCEDURE pagos.ActualizarEstadoMembresia
+AS
+BEGIN
+    -- Evita mensajes adicionales de filas afectadas, mejorando el rendimiento:contentReference[oaicite:0]{index=0}
+    SET NOCOUNT ON;  
+    
+    -- 1) Actualizar registros morosos de 1er vencimiento (fechaActual > vencimiento+5 AND <= vencimiento+10)
+    UPDATE pagos.estadoMorosidad
+    SET estadoMembresia = 'MOROSO - 1ER VENCIMIENTO'
+    WHERE GETDATE() > DATEADD(DAY, 5, fechaVencimientoMembresia)
+      AND GETDATE() <= DATEADD(DAY, 10, fechaVencimientoMembresia);
+
+    -- 2) Actualizar registros morosos de 2do vencimiento (fechaActual > vencimiento+10 AND <= vencimiento+15)
+    UPDATE pagos.estadoMorosidad
+    SET estadoMembresia = 'MOROSO - 2DO VENCIMIENTO'
+    WHERE GETDATE() > DATEADD(DAY, 10, fechaVencimientoMembresia)
+      AND GETDATE() <= DATEADD(DAY, 15, fechaVencimientoMembresia);
+
+    -- 3) Actualizar registros inactivos (fechaActual > vencimiento+15)
+    UPDATE pagos.estadoMorosidad
+    SET estadoMembresia = 'INACTIVO'
+    WHERE GETDATE() > DATEADD(DAY, 15, fechaVencimientoMembresia);
+
+    -- 4) Actualizar registros activos (fechaActual <= vencimiento)
+    UPDATE pagos.estadoMorosidad
+    SET estadoMembresia = 'ACTIVO'
+    WHERE GETDATE() <= fechaVencimientoMembresia;
+END;
