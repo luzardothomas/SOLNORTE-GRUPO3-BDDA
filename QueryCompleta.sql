@@ -131,14 +131,12 @@ GO
 
 -- 6. pagos.medioDePago
 CREATE TABLE pagos.tarjetaDisponible (
-    idTarjeta INT IDENTITY (1,1),
+    idTarjeta INT NOT NULL,
     tipoTarjeta VARCHAR(50) NOT NULL,
     descripcion VARCHAR(50) NOT NULL,
     CONSTRAINT PKMediosDePago PRIMARY KEY (idTarjeta, tipoTarjeta)
 );
 GO
-
-ALTER TABLE pagos.tarjetaDisponible
 
 -- 7. coberturas.coberturaDisponible
 CREATE TABLE coberturas.coberturaDisponible (
@@ -334,7 +332,6 @@ BEGIN
 END;
 GO;
 
-
 EXEC socios.InsertarSocio
     @dni                  = 12345678,
     @cuil                 = 20123456789,
@@ -348,6 +345,9 @@ EXEC socios.InsertarSocio
     @direccion            = 'Av. Siempre Viva 742',
     @contactoDeEmergencia = '01188776655';
 GO;
+
+SELECT *
+FROM socios.socio s 
 
 -- MODIFICAR SOCIO
 
@@ -397,9 +397,6 @@ EXEC socios.ModificarSocio
     @email    = 'nuevo.email@mail.com'
 GO
 
-
-
-
 -- ELIMINAR SOCIO
 
 CREATE OR ALTER PROCEDURE socios.eliminarSocio
@@ -412,6 +409,8 @@ BEGIN
     WHERE idSocio = @idSocio and estadoMembresia = 'INACTIVO';
 END
 GO
+
+EXEC socios.eliminarSocio @idSocio = 1
 
 -- ###### TABLA CATEGORIASSOCIO ######
 
@@ -430,6 +429,9 @@ BEGIN
 	END
 END
 GO
+
+EXEC socios.insertarCategoriaSocio Cadete, 5000
+SELECT * FROM socios.categoriaSocio
 
 -- MODIFICAR CATEGORIAS DE SOCIO
 
@@ -451,6 +453,9 @@ BEGIN
 END
 GO
 
+EXEC socios.modificarCategoriaSocio 1, Joven, 5500
+SELECT * FROM socios.categoriaSocio
+
 -- ELIMINAR CATEGORIAS DE SOCIO
 
 CREATE OR ALTER PROCEDURE socios.eliminarCategoriaSocio
@@ -463,6 +468,9 @@ BEGIN
     WHERE categoriaSocio.idCategoria = @idCategoria
 END
 GO
+
+EXEC socios.eliminarCategoriaSocio 2
+SELECT * FROM socios.categoriaSocio
 
 
 -- ###### TABLA ROLDISPONIBLE ######
@@ -501,6 +509,9 @@ BEGIN
 END
 GO
 
+EXEC socios.modificarRolDisponible 1, 'Mate sin Azucar'
+SELECT * FROM socios.rolDisponible
+
 -- ELIMINAR ROL DISPONIBLE
 
 CREATE OR ALTER PROCEDURE socios.eliminarRolDisponible
@@ -511,91 +522,79 @@ BEGIN
 
     DELETE FROM socios.rolDisponible
     WHERE idRol = @idRol
+
+    IF @@ROWCOUNT = 0
+        RAISERROR('No se encontró rol activo con id=%d.', 16, 1, @idRol);
 END
 GO
+
+EXEC socios.eliminarRolDisponible 1
+SELECT * FROM socios.rolDisponible
 
 -- ###### TABLA MEDIODEPAGO ######
 
 -- INSERTAR MEDIO DE PAGO
 
-CREATE OR ALTER PROCEDURE pagos.InsertarTarjetaDisponible
-    @tipoTarjeta VARCHAR(50),
-    @descripcion VARCHAR(50)
+CREATE OR ALTER PROCEDURE pagos.insertarMedioDePago
+    @idMedioDePago     INT,
+    @tipoMedioDePago   VARCHAR(50),
+    @descripcion       VARCHAR(50)
 AS
 BEGIN
     SET NOCOUNT ON;
-
-    INSERT INTO pagos.tarjetaDisponible (
-        tipoTarjeta,
-        descripcion
-    )
-    VALUES (
-        @tipoTarjeta,
-        @descripcion
-    );
-
-    -- Devolver los valores de la PK recién creados
-    SELECT 
-        CAST(SCOPE_IDENTITY() AS INT) AS NuevoIdTarjeta,
-        @tipoTarjeta                   AS TipoTarjeta;
-END;
+	IF(@idMedioDePago>0)
+	BEGIN
+    INSERT INTO pagos.medioDePago (idMedioDePago, tipoMedioDePago, descripcion)
+    VALUES (@idMedioDePago, @tipoMedioDePago, @descripcion);
+	END
+END
 GO
 
-EXEC pagos.InsertarTarjetaDisponible
-    @tipoTarjeta = 'CRÉDITO VISA',
-    @descripcion = 'Tarjeta Visa Clásica';
+EXEC pagos.insertarMedioDePago 1,'Debito','Mastercard Debito'
+SELECT * FROM pagos.medioDePago
+
 -- MODIFICAR MEDIO DE PAGO
 
-CREATE OR ALTER PROCEDURE pagos.ModificarTarjetaDisponible
-    @idTarjeta        INT,
-    @tipoTarjeta      VARCHAR(50),
-    @nuevaDescripcion VARCHAR(50)
+CREATE OR ALTER PROCEDURE pagos.modificarMedioDePago
+    @idMedioDePago     INT,
+    @tipoMedioDePago   VARCHAR(50),
+    @descripcion       VARCHAR(50) = NULL
 AS
 BEGIN
-    SET NOCOUNT ON;
-    UPDATE pagos.tarjetaDisponible
-    SET descripcion = @nuevaDescripcion
-    WHERE idTarjeta   = @idTarjeta
-      AND tipoTarjeta = @tipoTarjeta;
+
+    UPDATE pagos.medioDePago
+    SET
+        descripcion = COALESCE(@descripcion, descripcion)
+    WHERE idMedioDePago   = @idMedioDePag AND (@idMedioDePago>0)
 
     IF @@ROWCOUNT = 0
-    BEGIN
-        RAISERROR(
-            'No se encontró ninguna tarjeta con (idTarjeta=%d, tipoTarjeta=''%s'').',
-            16, 1,
-            @idTarjeta, @tipoTarjeta
-        );
-    END
-END;
+        RAISERROR('No se encontró medio de pago con id=%d.', 16, 1, @idMedioDePago, @tipoMedioDePago);
+END
 GO
+
+EXEC pagos.modificarMedioDePago -1, 'Credito', 'Mastercard Crédito'
+SELECT * FROM pagos.medioDePago
 
 -- ELIMINAR MEDIO DE PAGO
 
-CREATE OR ALTER PROCEDURE pagos.EliminarTarjetaDisponible
-    @idTarjeta   INT,
-    @tipoTarjeta VARCHAR(50)
+CREATE OR ALTER PROCEDURE pagos.eliminarMedioDePago
+    @idMedioDePago     INT,
+    @tipoMedioDePago   VARCHAR(50)
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    /*
-      Borrado físico de la fila que coincide exactamente con la clave compuesta.
-      Si no existe, devolvemos un error.
-    */
-    DELETE FROM pagos.tarjetaDisponible
-    WHERE idTarjeta   = @idTarjeta
-      AND tipoTarjeta = @tipoTarjeta;
+    DELETE FROM pagos.medioDePago
+    WHERE idMedioDePago   = @idMedioDePago
+      AND tipoMedioDePago = @tipoMedioDePago
 
     IF @@ROWCOUNT = 0
-    BEGIN
-        RAISERROR(
-            'No se encontró ninguna tarjeta con (idTarjeta=%d, tipoTarjeta=''%s'') para eliminar.',
-            16, 1,
-            @idTarjeta, @tipoTarjeta
-        );
-    END
-END;
+        RAISERROR('No se encontró medio de pago activo con id=%d y tipo="%s".', 16, 1, @idMedioDePago, @tipoMedioDePago);
+END
 GO
+
+EXEC pagos.eliminarMedioDePago 1, 'Debito'
+SELECT * FROM pagos.medioDePago
 
 -- :::::::::::::::::::::::::::::::::::::::::::: ACTIVIDADES ::::::::::::::::::::::::::::::::::::::::::::
 
@@ -636,10 +635,12 @@ BEGIN
 END
 GO
 
-exec actividades.insertarDeporteDisponible
-	'deporte de interiores', 'futsal', '25000.00'
+EXEC actividades.insertarDeporteDisponible 'Fútbol', 'Fútbol 5', 1500.00;
+EXEC actividades.insertarDeporteDisponible 'Basquet', 'Cancha profesional', 1500.00;
+EXEC actividades.insertarDeporteDisponible 'Tenis', 'Cancha ladrillo', 1500.00;
 
-	SELECT * FROM actividades.deporteDisponible
+SELECT TOP 3 *
+FROM actividades.DeporteDisponible
 
 -- MODIFICAR DEPORTE DISPONIBLE
 
@@ -685,6 +686,12 @@ BEGIN
 END;
 GO
 
+
+EXEC actividades.modificarDeporteDisponible @idDeporte = 1, @tipo = 'Kickboxing',@descripcion = 'Cuadrilatero',@costoPorMes = 1250.25;
+
+SELECT TOP 3 *
+FROM actividades.DeporteDisponible
+
 -- ELIMINAR DEPORTE DISPONIBLE
 
 CREATE OR ALTER PROCEDURE actividades.eliminarDeporteDisponible
@@ -704,13 +711,15 @@ BEGIN
 END
 GO
 
+EXEC actividades.eliminarDeporteDisponible @idDeporte = 1
+
 -- ###### TABLA ACTIVIDAD RECREATIVA ######
 
 --Insertar Actividad Recreativa
-CREATE OR ALTER PROCEDURE actividades.insertarActividadRecreativa (
+CREATE PROCEDURE actividades.insertarActividadRecreativa (
     @descripcion VARCHAR(50),
-    @horaInicio TIME,
-    @horaFin TIME,
+    @horaInicio VARCHAR(50),
+    @horaFin VARCHAR(50),
     @tarifaSocio DECIMAL(10, 2),
     @tarifaInvitado DECIMAL(10, 2)
 )
@@ -750,28 +759,49 @@ BEGIN
 END;
 GO
 
+-- Casos Validos
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, 75.00;
+EXEC actividades.insertarActividadRecreativa 'Bochas', '08:30', '10:00', 15.00, 20.00;
+EXEC actividades.insertarActividadRecreativa 'Ajedrez', '09:00', '11:00', 20.00, 35.00;
+
+SELECT *
+FROM actividades.actividadRecreativa 
+-- Casos Invalidos
+EXEC actividades.insertarActividadRecreativa '', '18:00', '20:00', 50.00, 75.00; -- Descripción vacía
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '', '20:00', 50.00, 75.00; -- Hora de inicio vacía
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '', 50.00, 75.00; -- Hora de fin vacía
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 0, 75.00;    -- Tarifa socio inválida
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, 0;    -- Tarifa invitado inválida
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', -10, 75.00;  -- Tarifa socio negativa
+EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, -10;  -- Tarifa invitado negativa
+
 -- Modificar Actividad Recreativa
-CREATE OR ALTER PROCEDURE actividades.modificarActividadRecreativa (
-    @idSitio INT,
+CREATE PROCEDURE actividades.modificarActividadRecreativa (
+    @idActividad INT,
     @descripcion VARCHAR(50),
-    @horaInicio TIME,
-    @horaFin TIME,
+    @horaInicio VARCHAR(50),
+    @horaFin VARCHAR(50),
     @tarifaSocio DECIMAL(10, 2),
     @tarifaInvitado DECIMAL(10, 2)
 )
 AS
 BEGIN
+    IF @idActividad IS NULL OR @idActividad <= 0
+    BEGIN
+        RAISERROR('El ID de la actividad debe ser un valor positivo.', 16, 1);
+        RETURN;
+    END
     IF @descripcion IS NULL OR @descripcion = ''
     BEGIN
         RAISERROR('La descripción de la actividad no puede estar vacía.', 16, 1);
         RETURN;
     END
-    IF @horaInicio IS NULL
+    IF @horaInicio IS NULL OR @horaInicio = ''
     BEGIN
         RAISERROR('La hora de inicio de la actividad no puede estar vacía.', 16, 1);
         RETURN;
     END
-    IF @horaFin IS NULL
+    IF @horaFin IS NULL OR @horaFin = ''
     BEGIN
         RAISERROR('La hora de fin de la actividad no puede estar vacía.', 16, 1);
         RETURN;
@@ -793,7 +823,7 @@ BEGIN
         horaFin = @horaFin,
         tarifaSocio = @tarifaSocio,
         tarifaInvitado = @tarifaInvitado
-    WHERE idSitio = @idSitio;
+    WHERE idActividad = @idActividad;
     -- Verificar si se actualizó alguna fila
     IF @@ROWCOUNT = 0
     BEGIN
@@ -803,20 +833,32 @@ BEGIN
 END;
 GO
 
+-- Caso Valido
+DECLARE @idActividadModificar INT;
+SELECT @idActividadModificar = 2;
+EXEC actividades.modificarActividadRecreativa @idActividadModificar, 'Fútbol Recreativo', '13:00', '15:00', 35.00, 55.00;
+-- Casos Invalidos
+EXEC actividades.modificarActividadRecreativa 9999, 'Tenis', '10:00', '12:00', 60.00, 90.00; -- ID inexistente
+EXEC actividades.modificarActividadRecreativa 1, '', '10:00', '12:00', 60.00, 90.00;    -- Descripción vacía
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '', '12:00', 60.00, 90.00;    -- Hora inicio vacía
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '', 60.00, 90.00;    -- Hora fin vacía
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 0, 90.00;       -- Tarifa socio inválida
+EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 60.00, 0;       -- Tarifa invitado inválida
+
 -- Eliminar Actividad Recreativa
 CREATE PROCEDURE actividades.eliminarActividadRecreativa (
-    @idSitio INT
+    @idActividad INT
 )
 AS
 BEGIN
-    IF @idSitio IS NULL OR @idSitio <= 0
+    IF @idActividad IS NULL OR @idActividad <= 0
     BEGIN
         RAISERROR('El ID de la actividad debe ser un valor positivo.', 16, 1);
         RETURN;
     END
     -- Eliminación de la actividad
     DELETE FROM actividades.actividadRecreativa
-    WHERE idSitio = @idSitio;
+    WHERE idActividad = @idActividad;
     
     IF @@ROWCOUNT = 0
     BEGIN
@@ -825,6 +867,13 @@ BEGIN
     END
 END;
 GO
+
+-- Caso Valido
+DECLARE @ultimaActividad INT;
+SELECT @ultimaActividad = MAX(idActividad) FROM actividades.actividadRecreativa
+EXEC actividades.eliminarActividadRecreativa @ultimaActividad;
+-- Caso Invalido
+EXEC actividades.eliminarActividadRecreativa 9999; -- ID inexistente
 
 -- ###### TABLA DEPORTEACTIVO ######
 
@@ -840,7 +889,7 @@ BEGIN
 	DECLARE @estadoMembresia VARCHAR(8);
 
     SET @estadoMembresia = (SELECT s.estadoMembresia FROM socios.socio s WHERE s.idSocio = @idSocio)
-	IF NOT (@estadoMembresia IN ('ACTIVO','MOROSO - 1ER VENCIMIENTO','MOROSO - 2DO VENCIMIENTO'))
+	IF NOT (@estadoMembresia IN ('Activo','Moroso'))
     BEGIN
         RAISERROR('Miembro no válido.', 16, 1);
         RETURN;
@@ -852,10 +901,13 @@ BEGIN
         RETURN;
     END
 
-    INSERT INTO actividades.deporteActivo (idSocioActivo, idDeporteActivo, estadoMembresia)
+    INSERT INTO actividades.deporteActivo (idSocio, idDeporte, estadoMembresia)
     VALUES (@idSocio, @idDeporte, @estadoMembresia);
 END;
 GO
+
+EXEC actividades.insertarDeporteActivo @idSocio = 1, @idDeporte = 1
+SELECT * FROM actividades.deporteActivo
 
 -- MODIFICAR DEPORTE ACTIVO
 
@@ -905,6 +957,9 @@ BEGIN
 END;
 GO
 
+EXEC actividades.modificarDeporteActivo @idDeporteActivo = 1, @idSocio = 1, @estadoMembresia = 'Activo';
+SELECT * FROM actividades.deporteActivo
+
 -- ELIMINAR DEPORTE ACTIVO
 
 CREATE PROCEDURE actividades.eliminarDeporteActivo
@@ -917,6 +972,9 @@ BEGIN
     WHERE idDeporteActivo = @idDeporteActivo;
 END;
 GO
+
+EXEC actividades.eliminarDeporteActivo @idDeporteActivo = 1
+SELECT * FROM actividades.deporteActivo
 
 -- :::::::::::::::::::::::::::::::::::::::::::: ITINERARIOS ::::::::::::::::::::::::::::::::::::::::::::
 
@@ -953,6 +1011,11 @@ BEGIN
     VALUES (@dia, @idDeporte, @horaInicio, @horaFin);
 END;
 GO
+
+EXEC itinerarios.insertarItinerario @dia = 'Lunes', @idDeporte = 1, @horaInicio = '08:00', @horaFin = '10:00';
+
+SELECT *
+FROM itinerarios.itinerario
 
 -- MODIFICAR ITINERARIO
 
@@ -1004,6 +1067,11 @@ BEGIN
 END;
 GO
 
+EXEC itinerarios.modificarItinerario @idItinerario = 1, @horaFin = '11:30';
+
+SELECT *
+FROM itinerarios.itinerario
+
 -- ELIMINAR ITINERARIO
 
 CREATE OR ALTER PROCEDURE itinerarios.eliminarItinerario
@@ -1022,210 +1090,6 @@ BEGIN
 	
 END
 GO
-
--- :::::::::::::::::::::::::::::::::::::::::::: SOCIOS ::::::::::::::::::::::::::::::::::::::::::::
-
--- ###### TABLA SOCIO ###### 
-
--- INSERTAR
-
-EXEC socios.insertarSocio 10123456, 20101234561, 'Juan', 'Pérez', 'juan.perez@gmail.com', '1134567890', '1985-04-12', '2028-01-01', '1122334455', 'jperez', 'clave123', 'Activo', 0.00
-EXEC socios.insertarSocio 10234567, 20102345672, 'María', 'Gómez', 'maria.gomez@yahoo.com', '1145678901', '1990-08-23', '2028-01-01', '1133445566', 'mgomez', 'clave123', 'Activo', 100.00
-EXEC socios.insertarSocio 10345678, 20103456783, 'Carlos', 'Rodríguez', 'carlos.r@gmail.com', '1156789012', '1978-02-14', '2028-01-01', '1144556677', 'crodriguez', 'clave123', 'Activo', 200.00
-EXEC socios.insertarSocio 10456789, 20104567894, 'Ana', 'Martínez', 'ana.martinez@hotmail.com', '1167890123', '1995-12-01', '2028-01-01', '1155667788', 'amartinez', 'clave123', 'Activo', 300.00
-EXEC socios.insertarSocio 10567890, 20105678905, 'Luis', 'Fernández', 'luisf@live.com', '1178901234', '1982-11-19', '2028-01-01', '1166778899', 'lfernandez', 'clave123', 'Activo', 400.00
-EXEC socios.insertarSocio 10678901, 20106789016, 'Laura', 'López', 'laura.lopez@gmail.com', '1189012345', '1998-06-30', '2028-01-01', '1177889900', 'llopez', 'clave123', 'Activo', 500.00
-EXEC socios.insertarSocio 10789012, 20107890127, 'Jorge', 'García', 'jorge.garcia@gmail.com', '1190123456', '1987-09-07', '2028-01-01', '1188990011', 'jgarcia', 'clave123', 'Activo', 600.00
-EXEC socios.insertarSocio 10890123, 20108901238, 'Valeria', 'Díaz', 'valeria.diaz@gmail.com', '1101234567', '1991-03-18', '2028-01-01', '1199001122', 'vdiaz', 'clave123', 'Activo', 700.00
-EXEC socios.insertarSocio 10901234, 20109012349, 'Ricardo', 'Sánchez', 'ricardo.s@hotmail.com', '1112345678', '1983-07-11', '2028-01-01', '1110011223', 'rsanchez', 'clave123', 'Activo', 800.00
-EXEC socios.insertarSocio 11012345, 20110123450, 'Sofía', 'Torres', 'sofia.torres@gmail.com', '1123456789', '1996-10-29', '2028-01-01', '1121122334', 'storres', 'clave123', 'Activo', 900.00
-EXEC socios.insertarSocio 11123456, 20111234561, 'Diego', 'Ramírez', 'diego.ramirez@gmail.com', '1134567890', '1989-05-06', '2028-01-01', '1132233445', 'dramirez', 'clave123', 'Activo', 0.00
-EXEC socios.insertarSocio 11234567, 20112345672, 'Julieta', 'Moreno', 'julieta.moreno@yahoo.com', '1145678901', '1994-01-27', '2028-01-01', '1143344556', 'jmoreno', 'clave123', 'Activo', 100.00
-EXEC socios.insertarSocio 11345678, 20113456783, 'Martín', 'Silva', 'martin.silva@gmail.com', '1156789012', '1980-06-02', '2028-01-01', '1154455667', 'msilva', 'clave123', 'Activo', 200.00
-EXEC socios.insertarSocio 11456789, 20114567894, 'Camila', 'Ortiz', 'camila.ortiz@gmail.com', '1167890123', '1992-11-11', '2028-01-01', '1165566778', 'cortiz', 'clave123', 'Activo', 300.00
-EXEC socios.insertarSocio 11567890, 20115678905, 'Pedro', 'Molina', 'pedro.molina@live.com', '1178901234', '1986-03-16', '2028-01-01', '1176677889', 'pmolina', 'clave123', 'Activo', 400.00
-EXEC socios.insertarSocio 11678901, 20116789016, 'Lucía', 'Rojas', 'lucia.rojas@gmail.com', '1189012345', '1999-09-09', '2028-01-01', '1187788990', 'lrojas', 'clave123', 'Activo', 500.00
-EXEC socios.insertarSocio 11789012, 20117890127, 'Fernando', 'Castro', 'fernando.castro@gmail.com', '1190123456', '1977-04-04', '2028-01-01', '1198899001', 'fcastro', 'clave123', 'Activo', 600.00
-EXEC socios.insertarSocio 11890123, 20118901238, 'Elena', 'Acosta', 'elena.acosta@gmail.com', '1101234567', '1993-12-21', '2028-01-01', '1109900112', 'eacosta', 'clave123', 'Activo', 700.00
-EXEC socios.insertarSocio 11901234, 20119012349, 'Gabriel', 'Cruz', 'gabriel.cruz@hotmail.com', '1112345678', '1981-08-08', '2028-01-01', '1111011223', 'gcruz', 'clave123', 'Activo', 800.00
-EXEC socios.insertarSocio 12012345, 20120123450, 'Florencia', 'Herrera', 'florencia.herrera@gmail.com', '1123456789', '1997-02-05', '2028-01-01', '1122122334', 'fherrera', 'clave123', 'Activo', 900.00
-
-
-SELECT TOP 20 *
-FROM socios.socio s 
-
--- MODIFICAR
-
-EXEC socios.modificarSocio @idSocio = 1,@nombre = 'Maria',@apellido = 'Gutierrez',@saldoAFavor = 150.75;
-EXEC socios.modificarSocio @idSocio = 2,@apellido = 'Hilton',@saldoAFavor = 800.75;
-EXEC socios.modificarSocio @idSocio = 3,@saldoAFavor = 1250.50; 
-
-SELECT TOP 3 *
-FROM socios.socio s 
-
--- ELIMINAR
-
-EXEC socios.eliminarSocio @idSocio = 1
-EXEC socios.eliminarSocio @idSocio = 2
-EXEC socios.eliminarSocio @idSocio = 3
-EXEC socios.eliminarSocio @idSocio = 4
-EXEC socios.eliminarSocio @idSocio = 5
-
-SELECT TOP 5 *
-FROM socios.socio
-
--- ###### TABLA CATEGORIASSOCIO ######
-
--- INSERTAR
-
-EXEC socios.insertarCategoriaSocio Cadete, 5000
-SELECT * FROM socios.categoriaSocio
-
--- MODIFICAR
-
-EXEC socios.modificarCategoriaSocio 1, Joven, 5500
-SELECT * FROM socios.categoriaSocio
-
--- ELIMINAR
-EXEC socios.eliminarCategoriaSocio 2
-SELECT * FROM socios.categoriaSocio
-
-
--- ###### TABLA ROLDISPONIBLE ######
-
--- INSERTAR
-
-EXEC socios.insertarRolDisponible 1, Administrador
-SELECT * FROM socios.rolDisponible
-
--- MODIFICAR
-
-EXEC socios.modificarRolDisponible 1, 'Mate sin Azucar'
-SELECT * FROM socios.rolDisponible
-
--- ELIMINAR
-
-EXEC socios.eliminarRolDisponible 1
-SELECT * FROM socios.rolDisponible
-
--- ###### TABLA MEDIODEPAGO ######
-
--- INSERTAR
-
-EXEC pagos.insertarMedioDePago 1,'Debito','Mastercard Debito'
-SELECT * FROM pagos.medioDePago
-
--- MODIFICAR
-
-EXEC pagos.modificarMedioDePago -1, 'Credito', 'Mastercard Crédito'
-SELECT * FROM pagos.medioDePago
-
--- ELIMINAR
-
-EXEC pagos.eliminarMedioDePago 1, 'Debito'
-SELECT * FROM pagos.medioDePago
-
--- :::::::::::::::::::::::::::::::::::::::::::: ACTIVIDADES ::::::::::::::::::::::::::::::::::::::::::::
-
--- ###### TABLA DEPORTEDISPONIBLE ######
-
--- INSERTAR
-
-EXEC actividades.insertarDeporteDisponible 'Fútbol', 'Fútbol 5', 1500.00;
-EXEC actividades.insertarDeporteDisponible 'Basquet', 'Cancha profesional', 1500.00;
-EXEC actividades.insertarDeporteDisponible 'Tenis', 'Cancha ladrillo', 1500.00;
-
-SELECT TOP 3 *
-FROM actividades.DeporteDisponible
-
--- MODIFICAR
-
-EXEC actividades.modificarDeporteDisponible @idDeporte = 1, @tipo = 'Kickboxing',@descripcion = 'Cuadrilatero',@costoPorMes = 1250.25;
-
-SELECT TOP 3 *
-FROM actividades.DeporteDisponible
-
--- ELIMINAR
-
-EXEC actividades.eliminarDeporteDisponible @idDeporte = 1
-
--- ###### TABLA ACTIVIDAD RECREATIVA ######
-
--- INSERTAR
--- Casos Validos
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, 75.00;
-EXEC actividades.insertarActividadRecreativa 'Bochas', '08:30', '10:00', 15.00, 20.00;
-EXEC actividades.insertarActividadRecreativa 'Ajedrez', '09:00', '11:00', 20.00, 35.00;
-
-SELECT *
-FROM actividades.actividadRecreativa 
--- Casos Invalidos
-EXEC actividades.insertarActividadRecreativa '', '18:00', '20:00', 50.00, 75.00; -- Descripción vacía
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '', '20:00', 50.00, 75.00; -- Hora de inicio vacía
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '', 50.00, 75.00; -- Hora de fin vacía
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 0, 75.00;    -- Tarifa socio inválida
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, 0;    -- Tarifa invitado inválida
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', -10, 75.00;  -- Tarifa socio negativa
-EXEC actividades.insertarActividadRecreativa 'Fútbol', '18:00', '20:00', 50.00, -10;  -- Tarifa invitado negativa
-
--- MODIFICAR
-
--- Caso Valido
-DECLARE @idActividadModificar INT;
-SELECT @idActividadModificar = 2;
-EXEC actividades.modificarActividadRecreativa @idActividadModificar, 'Fútbol Recreativo', '13:00', '15:00', 35.00, 55.00;
--- Casos Invalidos
-EXEC actividades.modificarActividadRecreativa 9999, 'Tenis', '10:00', '12:00', 60.00, 90.00; -- ID inexistente
-EXEC actividades.modificarActividadRecreativa 1, '', '10:00', '12:00', 60.00, 90.00;    -- Descripción vacía
-EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '', '12:00', 60.00, 90.00;    -- Hora inicio vacía
-EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '', 60.00, 90.00;    -- Hora fin vacía
-EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 0, 90.00;       -- Tarifa socio inválida
-EXEC actividades.modificarActividadRecreativa 1, 'Tenis', '10:00', '12:00', 60.00, 0;       -- Tarifa invitado inválida
-
--- ELIMINAR
--- Caso Valido
-DECLARE @ultimaActividad INT;
-SELECT @ultimaActividad = MAX(idActividad) FROM actividades.actividadRecreativa
-EXEC actividades.eliminarActividadRecreativa @ultimaActividad;
--- Caso Invalido
-EXEC actividades.eliminarActividadRecreativa 9999; -- ID inexistente
-
--- ###### TABLA DEPORTEACTIVO ######
-
--- INSERTAR
-
-EXEC actividades.insertarDeporteActivo @idSocio = 1, @idDeporte = 1
-SELECT * FROM actividades.deporteActivo
-
--- MODIFICAR
-
-EXEC actividades.modificarDeporteActivo @idDeporteActivo = 1, @idSocio = 1, @estadoMembresia = 'Activo';
-SELECT * FROM actividades.deporteActivo
-
--- ELIMINAR
-
-EXEC actividades.eliminarDeporteActivo @idDeporteActivo = 1
-SELECT * FROM actividades.deporteActivo
-
--- :::::::::::::::::::::::::::::::::::::::::::: ITINERARIOS ::::::::::::::::::::::::::::::::::::::::::::
-
--- ###### TABLA ITINERARIO ######
-
--- INSERTAR
-
-EXEC itinerarios.insertarItinerario @dia = 'Lunes', @idDeporte = 1, @horaInicio = '08:00', @horaFin = '10:00';
-
-SELECT *
-FROM itinerarios.itinerario
-
--- MODIFICAR
-
-EXEC itinerarios.modificarItinerario @idItinerario = 1, @horaFin = '11:30';
-
-SELECT *
-FROM itinerarios.itinerario
-
--- ELIMINAR
 
 EXEC itinerarios.eliminarItinerario @idItinerario = 1;
 
