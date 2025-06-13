@@ -418,8 +418,7 @@ BEGIN
         RAISERROR('No existe tutorACargo con dniTutor = %d.', 16, 1, @dniTutor);  
     END  
 END;  
-GO  
-
+GO
 -- ###### TABLA CATEGORIASSOCIO ######
 
 -- INSERTAR CATEGORIAS DE SOCIO
