@@ -166,7 +166,7 @@ GO
 CREATE TABLE socios.grupoFamiliarActivo (
 	idSocio INT NOT NULL CHECK (idSocio > 0),
 	idGrupoFamiliar INT NOT NULL CHECK (idGrupoFamiliar > 0),
-	parentescoGrupoFamiliar VARCHAR(10) NOT NULL,
+	parentescoGrupoFamiliar VARCHAR(5) NOT NULL CHECK (parentescoGrupoFamiliar in('Tutor', 'Menor')),
 	estadoGrupoActivo BIT NOT NULL CONSTRAINT estadoGrupo DEFAULT (1),
 	CONSTRAINT PK_grupoFamiliarActivo PRIMARY KEY (idSocio, idGrupoFamiliar),
 	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
@@ -280,12 +280,14 @@ GO
 CREATE TABLE reservas.reservaSUM (
 	idReserva INT IDENTITY(1,1),
 	idSocio INT NOT NULL CHECK (idSocio >= 0), -- Porque si no es socio y es Invitado, iria 0
+	idSalon INT NOT NULL,
 	dniReservante INT NOT NULL,
 	horaInicioReserva INT NOT NULL,
 	horaFinReserva INT NOT NULL,
 	tarifaFinal DECIMAL(10, 2) CHECK (tarifaFinal > 0) NOT NULL,
 	CONSTRAINT PK_reservasSUM PRIMARY KEY (idReserva, idSocio, dniReservante),
-    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
+    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
+	FOREIGN KEY (idSalon) REFERENCES itinerarios.datosSUM(idSitio)
 );
 GO
 
@@ -3045,6 +3047,7 @@ CREATE OR ALTER PROCEDURE reservas.insertarReservaSum
     @horaInicioReserva INT,
     @horaFinReserva INT,
     @tarifaFinal DECIMAL(10, 2),
+	@idSalon INT,
     @newIdReserva INT OUTPUT -- Para devolver el ID generado por IDENTITY
 AS
 BEGIN
@@ -3070,18 +3073,29 @@ BEGIN
             THROW 50004, 'La tarifa final debe ser un valor positivo.', 1;
         END
 
+		IF @idSalon < 0
+		BEGIN
+			THROW 50005, 'el número del Salón SUM reservado debe ser positivo', 1;
+		END;
+
         -- Validar existencia de idSocio en socios.socio
         IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
         BEGIN
             -- Si @idSocio = 0 está permitido para "invitados" y no referencia socio.socio,
-            THROW 50005, 'El ID de socio especificado no existe en la tabla de socios.', 1;
+            THROW 50006, 'El ID de socio especificado no existe en la tabla de socios.', 1;
         END
+
+		-- Validar existencia del idSitio en datosSUM
+		IF NOT EXISTS (SELECT 1 FROM itinerarios.datosSUM WHERE idSitio = @idSalon)
+		BEGIN
+			THROW 50007, 'EL ID del Salón especificado no existe en la tabla de SUMs', 1;
+		END
 
         -- Iniciar transacción
         BEGIN TRANSACTION;
 
-        INSERT INTO reservas.reservasSUM (idSocio, dniReservante, horaInicioReserva, horaFinReserva,tarifaFinal)
-        VALUES (@idSocio, @dniReservante, @horaInicioReserva, @horaFinReserva, @tarifaFinal);
+        INSERT INTO reservas.reservasSUM (idSocio, idSalon, dniReservante, horaInicioReserva, horaFinReserva,tarifaFinal)
+        VALUES (@idSocio, @idSalon, @dniReservante, @horaInicioReserva, @horaFinReserva, @tarifaFinal);
         SET @newIdReserva = SCOPE_IDENTITY(); -- Obtener el ID generado
         COMMIT TRANSACTION;
         PRINT 'Reserva SUM insertada con éxito. ID de Reserva: ' + CAST(@newIdReserva AS VARCHAR(10));
@@ -3102,6 +3116,7 @@ GO
 CREATE OR ALTER PROCEDURE reservas.modificarReservaSum
     @idReserva INT,
     @idSocioOriginal INT,
+	@idSalon INT,
     @dniReservanteOriginal BIGINT,
     @newIdSocio INT = NULL, -- Nuevos valores para posible actualización
     @newDniReservante BIGINT = NULL,
