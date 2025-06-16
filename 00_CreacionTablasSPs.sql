@@ -460,8 +460,8 @@ GO
 
 CREATE OR ALTER PROCEDURE socios.insertarSocio
   @categoriaSocio             INT,
-  @dni                        BIGINT,
-  @cuil                       BIGINT,
+  @dni                        VARCHAR(8),
+  @cuil                       VARCHAR(13),
   @nombre                     VARCHAR(10),
   @apellido                   VARCHAR(10),
   @email                      VARCHAR(25)    = NULL,
@@ -625,7 +625,7 @@ PRINT '*** INSERCIÓN VÁLIDA ***';
 EXEC socios.insertarSocio
     @categoriaSocio = 1,
     @dni = '12345678',
-    @cuil = '20-12345678-3',
+    @cuil = '20-44391352-2',
     @nombre = 'Juan',
     @apellido = 'Perez',
     @usuario = 'juan.perez',
