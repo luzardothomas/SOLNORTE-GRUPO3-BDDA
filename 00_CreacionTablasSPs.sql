@@ -127,7 +127,7 @@ GO
 CREATE TABLE socios.socio (
     idSocio INT IDENTITY(1,1),
 	categoriaSocio INT NOT NULL,
-    dni varchar(8) NOT NULL,
+    dni varchar(10) NOT NULL,
     cuil varchar(13) NOT NULL,
     nombre VARCHAR(10) NOT NULL,
     apellido VARCHAR(10) NOT NULL,
@@ -359,7 +359,7 @@ BEGIN
 END
 GO
 
-CREATE OR ALTER FUNCTION socios.validarDNI(@dni VARCHAR(15))
+CREATE OR ALTER FUNCTION socios.validarDNI(@dni VARCHAR(10))
 RETURNS BIT
 AS
 BEGIN
@@ -440,7 +440,7 @@ GO
 
 CREATE OR ALTER PROCEDURE socios.insertarSocio
   @categoriaSocio             INT,
-  @dni                        VARCHAR(8),
+  @dni                        VARCHAR(10),
   @cuil                       VARCHAR(13),
   @nombre                     VARCHAR(10),
   @apellido                   VARCHAR(10),
@@ -514,8 +514,8 @@ GO
 CREATE PROCEDURE socios.actualizarSocio
   @idSocio                    INT,
   @categoriaSocio             INT,
-  @dni                        BIGINT           = NULL,
-  @cuil                       BIGINT           = NULL,
+  @dni                        VARCHAR(10)           = NULL,
+  @cuil                       VARCHAR(13)           = NULL,
   @nombre                     VARCHAR(10)      = NULL,
   @apellido                   VARCHAR(10)      = NULL,
   @email                      VARCHAR(25)      = NULL,
