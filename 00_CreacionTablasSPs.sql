@@ -436,28 +436,6 @@ BEGIN
 END
 GO
 
-PRINT '--- Pruebas de Inserción ---';
-
--- 2.1 inserción válida
-EXEC socios.insertarCategoriaSocio @tipo = 'Cadete', @costoMembresia = 25000.00;
-
--- 2.2 inserción con costo inválido (negativo) -> falla por CHECK de tabla
-BEGIN TRY
-    EXEC socios.insertarCategoriaSocio @tipo = 'Mayor', @costoMembresia = -50.00;
-END TRY
-BEGIN CATCH
-    PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
--- 2.3 inserción con tipo vacío -> falla por SP
-BEGIN TRY
-    EXEC socios.insertarCategoriaSocio @tipo = '', @costoMembresia = 50.00;
-END TRY
-BEGIN CATCH
-    PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-GO
-
 --socio
 
 CREATE OR ALTER PROCEDURE socios.insertarSocio
@@ -623,99 +601,6 @@ BEGIN
 END
 GO
 
-PRINT '*** INSERCIÓN VÁLIDA ***';
-EXEC socios.insertarSocio
-    @categoriaSocio = 1,
-    @dni = '12345678',
-    @cuil = '20-44391352-2',
-    @nombre = 'Juan',
-    @apellido = 'Perez',
-    @usuario = 'juan.perez',
-    @contrasenia = 'abc123';
-
-PRINT '*** DNI INVÁLIDO (demasiado corto) ***';
-BEGIN TRY
-    EXEC socios.insertarSocio
-        @categoriaSocio = 1,
-        @dni = '123456',
-        @cuil = '20-12345678-3',
-        @nombre = 'Ana',
-        @apellido = 'Gomez',
-        @usuario = 'ana.gomez',
-        @contrasenia = 'pass';
-END TRY BEGIN CATCH
-    PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
-PRINT '*** CUIL INVÁLIDO (checksum incorrecto) ***';
-BEGIN TRY
-    EXEC socios.insertarSocio
-        @categoriaSocio = 1,
-        @dni = '87654321',
-        @cuil = '27-87654321-0',
-        @nombre = 'Luis',
-        @apellido = 'Lopez',
-        @usuario = 'luis.lopez',
-        @contrasenia = 'pass';
-END TRY BEGIN CATCH
-    PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
-PRINT '*** CATEGORÍA INEXISTENTE ***';
-BEGIN TRY
-    EXEC socios.insertarSocio
-        @categoriaSocio = 99,
-        @dni = '11223344',
-        @cuil = '23-11223344-2',
-        @nombre = 'Carlos',
-        @apellido = 'Diaz',
-        @usuario = 'carlos.diaz',
-        @contrasenia = 'pass';
-END TRY BEGIN CATCH
-    PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
-PRINT '*** ACTUALIZACIÓN VÁLIDA: nombre y nueva contraseña ***';
-EXEC socios.actualizarSocio
-    @idSocio = 1,
-    @categoriaSocio = 1,
-    @nombre = 'Juan Carlos',
-    @contraseniaNueva = 'xyz789';
-
-PRINT '*** ACTUALIZACIÓN ERROR: DNI inválido ***';
-BEGIN TRY
-    EXEC socios.actualizarSocio
-        @idSocio = 1,
-        @categoriaSocio = 1,
-        @dni = 'abc1234';
-END TRY BEGIN CATCH
-    PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
-PRINT '*** ACTUALIZACIÓN ERROR: socio inexistente ***';
-BEGIN TRY
-    EXEC socios.actualizarSocio
-        @idSocio = 99,
-        @categoriaSocio = 1,
-        @nombre = 'Inexistente';
-END TRY BEGIN CATCH
-    PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
-PRINT '*** BORRADO LÓGICO VÁLIDO ***';
-EXEC socios.eliminarSocioLogico
-    @idSocio = 1,
-    @categoriaSocio = 1;
-
-PRINT '*** BORRADO ERROR: socio ya inactivo/inexistente ***';
-BEGIN TRY
-    EXEC socios.eliminarSocioLogico
-        @idSocio = 99,
-        @categoriaSocio = 1;
-END TRY BEGIN CATCH
-    PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-GO
 --rolDisponible
 
 CREATE OR ALTER PROCEDURE socios.insertarRolDisponible
@@ -1050,49 +935,6 @@ BEGIN
   WHERE idGrupoFamiliar = @idGrupoFamiliar;
 END
 GO
-
-PRINT '--- Inserción válida ---';
-EXEC socios.insertarGrupoFamiliar @cantidadGrupoFamiliar = 4;
-
-PRINT '--- Inserción inválida (0) ---';
-BEGIN TRY
-  EXEC socios.insertarGrupoFamiliar @cantidadGrupoFamiliar = 0;
-END TRY BEGIN CATCH
-  PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
--- =============================================
--- C) Pruebas de Actualización
--- =============================================
-PRINT '--- Actualización válida (ID = 1) ---';
-EXEC socios.actualizarGrupoFamiliar @idGrupoFamiliar = 1, @cantidadGrupoFamiliar = 5;
-
-PRINT '--- Actualización inválida (cantidad negativa) ---';
-BEGIN TRY
-  EXEC socios.actualizarGrupoFamiliar @idGrupoFamiliar = 1, @cantidadGrupoFamiliar = -3;
-END TRY BEGIN CATCH
-  PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
-PRINT '--- Actualización inválida (ID inexistente) ---';
-BEGIN TRY
-  EXEC socios.actualizarGrupoFamiliar @idGrupoFamiliar = 99, @cantidadGrupoFamiliar = 2;
-END TRY BEGIN CATCH
-  PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
-
--- =============================================
--- D) Pruebas de Eliminación
--- =============================================
-PRINT '--- Eliminación válida (ID = 1) ---';
-EXEC socios.eliminarGrupoFamiliar @idGrupoFamiliar = 1;
-
-PRINT '--- Eliminación inválida (ID inexistente) ---';
-BEGIN TRY
-  EXEC socios.eliminarGrupoFamiliar @idGrupoFamiliar = 99;
-END TRY BEGIN CATCH
-  PRINT 'Error esperado: ' + ERROR_MESSAGE();
-END CATCH;
 
 --grupoFamiliarActivo
 
