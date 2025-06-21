@@ -42,7 +42,7 @@ GO
 -- 1. Creación de tablas sin dependencias de clave foránea directas, o con claves primarias referenciables.
 
 -- 1.1 socios.categoriaSocio
-CREATE TABLE socios.categoriaSocio (
+CREATE TABLE socios.categoriaMembresiaSocio (
     idCategoria INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(15) NOT NULL,
     costoMembresia DECIMAL(10, 2) NOT NULL CHECK (costoMembresia > 0),
@@ -135,13 +135,13 @@ CREATE TABLE socios.socio (
     telefono VARCHAR(14),
     fechaNacimiento DATE,
     fechaDeVigenciaContrasenia DATE,
+	fechaIngresoSocio DATE,
     contactoDeEmergencia VARCHAR(14),
     usuario VARCHAR(50) UNIQUE,
     contrasenia VARCHAR(10),
     estadoMembresia VARCHAR(22) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
-	fechaIngresoSocio DATE,
 	fechaVencimientoMembresia DATE,
-    saldoAFavor DECIMAL(10, 2) CHECK (saldoAFavor >= 0),
+    -- saldoAFavor DECIMAL(10, 2) CHECK (saldoAFavor >= 0), GENERAR UNA ENTIDAD DE ESTO
     direccion VARCHAR(25),
 	CONSTRAINT PK_socio PRIMARY KEY (idSocio),
 	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaSocio(idCategoria)
@@ -154,10 +154,10 @@ GO
 CREATE TABLE socios.rolVigente (
     idRol INT NOT NULL CHECK (idRol > 0),
     idSocio INT NOT NULL CHECK (idSocio > 0),
+	estadoRolVigente BIT NOT NULL CONSTRAINT estadoVigencia DEFAULT (1),
     CONSTRAINT PK_rolVigente PRIMARY KEY (idRol, idSocio),
     FOREIGN KEY (idRol) REFERENCES socios.rolDisponible(idRol),
-    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
-	estadoRolVigente BIT NOT NULL CONSTRAINT estadoVigencia DEFAULT (1)
+    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
 );
 GO
 
@@ -204,11 +204,9 @@ CREATE TABLE pagos.facturaEmitida (
     idFactura INT PRIMARY KEY IDENTITY(1,1),
 	idSocio INT,
 	categoriaSocio INT NOT NULL,
-	idServicioFacturado INT NOT NULL,
-	descripcionServicioFacturado VARCHAR(50) NOT NULL,
 	nombreSocio VARCHAR(10) NOT NULL,
 	apellidoSocio VARCHAR(10) NOT NULL,
-    fechaEmision DATE DEFAULT GETDATE(),
+	fechaEmision DATE DEFAULT GETDATE(),
 	cuilDeudor INT NOT NULL,
 	domicilio VARCHAR(35) NOT NULL,
 	modalidadCobro VARCHAR(25) NOT NULL,
@@ -232,9 +230,8 @@ CREATE TABLE pagos.cobroFactura (
     fechaEmisionCobro DATE NOT NULL,
     nombreSocio VARCHAR(10) NOT NULL,
     apellidoSocio VARCHAR(10) NOT NULL,
-    fechaEmision DATE DEFAULT GETDATE() NOT NULL,
-    cuilDeudor INT NOT NULL,
-    domicilio VARCHAR(20),
+	cuilDeudor INT NOT NULL,
+	domicilio VARCHAR(20),
     modalidadCobro VARCHAR(25) NOT NULL,
     numeroCuota INT NOT NULL,
     totalAbonado DECIMAL(10, 2) NOT NULL CHECK (totalAbonado >= 0),
@@ -271,6 +268,7 @@ CREATE TABLE coberturas.prepagaEnUso (
     idCobertura INT NOT NULL,
     idNumeroSocio INT NOT NULL,
     categoriaSocio INT NOT NULL,
+	activo BIT DEFAULT 1, -- 1 para activo, 0 para eliminado lógicamente
     FOREIGN KEY (idCobertura) REFERENCES coberturas.coberturaDisponible(idCoberturaDisponible),
     FOREIGN KEY (idNumeroSocio) REFERENCES socios.socio(idSocio)
 );
@@ -284,7 +282,8 @@ CREATE TABLE reservas.reservaSUM (
 	dniReservante INT NOT NULL,
 	horaInicioReserva INT NOT NULL,
 	horaFinReserva INT NOT NULL,
-	tarifaFinal DECIMAL(10, 2) CHECK (tarifaFinal > 0) NOT NULL,
+	tarifaHorariaSocio DECIMAL(10, 2) CHECK (tarifaHorariaSocio > 0) NOT NULL,
+	tarifaHorariaInvitado DECIMAL(10, 2) CHECK (tarifaHorariaInvitado > 0) NOT NULL,
 	CONSTRAINT PK_reservasSUM PRIMARY KEY (idReserva, idSocio, dniReservante),
     FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
 	FOREIGN KEY (idSalon) REFERENCES itinerarios.datosSUM(idSitio)
@@ -303,9 +302,7 @@ CREATE TABLE reservas.reservaPaseActividad (
 );
 GO
 
--- 4. Tablas con dependencias de tercer nivel (últimas)
-
--- 4.1 pagos.reembolso
+-- 3.12 pagos.reembolso
 CREATE TABLE pagos.reembolso (
     idFacturaReembolso INT NOT NULL IDENTITY(1,1),
     idCobroOriginal INT NOT NULL,
@@ -318,6 +315,31 @@ CREATE TABLE pagos.reembolso (
     CONSTRAINT PK_reembolso PRIMARY KEY (idFacturaReembolso, idCobroOriginal),
     FOREIGN KEY (idCobroOriginal, idFacturaOriginal) REFERENCES pagos.cobroFactura(idCobro, idFacturaCobrada),
     FOREIGN KEY (idSocioDestinatario) REFERENCES socios.socio(idSocio)
+);
+GO
+
+-- 3.13 pagos.cuerpoFactura
+CREATE TABLE pagos.cuerpoFactura (
+	idFactura INT NOT NULL,
+	idItemFactura INT NOT NULL,
+	tipoItem VARCHAR(25) NOT NULL,
+	descripcionItem VARCHAR(25) NOT NULL,
+	importeItem DECIMAL(10, 2) CHECK (importeItem > 0) NOT NULL,
+	CONSTRAINT PK_cuerpoFactura PRIMARY KEY (idFactura, idItemFactura),
+	FOREIGN KEY (idFactura) REFERENCES pagos.facturaEmitida(idFactura)
+);
+GO
+
+-- 3.14 actividades.presentismoActividadSocio
+CREATE TABLE actividades.presentismoActividadSocio (
+	idSocio INT NOT NULL,
+	idDeporteActivo INT NOT NULL,
+	fechaActividad VARCHAR(10) NOT NULL, -- lo pense como poner en que dia es la actividad, por eso no un DATE
+	estadoPresentismo VARCHAR(8) NOT NULL CHECK (estadoPresentismo in ('Activo', 'Inactivo')),
+	profesorDeporte VARCHAR(35) NOT NULL,
+	CONSTRAINT PK_presentismoActividadSocio PRIMARY KEY (idSocio, idDeporteActivo),
+	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
+	FOREIGN KEY (idDeporteActivo) REFERENCES actividades.deporteActivo(idDeporteActivo)
 );
 GO
 
@@ -1412,6 +1434,132 @@ BEGIN
 END
 GO
 
+-- :::::::::::::::::::::::::::::::::::::::::::: ACTIVIDADES ::::::::::::::::::::::::::::::::::::::::::::
+
+-- ### presentismoActividadSocio ###
+
+-- ------------------------------------------------------------------------------
+-- PROCEDIMIENTO: insertarPresentismoActividadSocio
+-- ------------------------------------------------------------------------------
+
+CREATE OR ALTER PROCEDURE actividades.insertarPresentismoActividadSocio
+    @idSocio INT,
+    @idDeporteActivo INT,
+    @fechaActividad VARCHAR(10),
+    @estadoPresentismo VARCHAR(8),
+    @profesorDeporte VARCHAR(35)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        IF @estadoPresentismo NOT IN ('Activo', 'Inactivo')
+        BEGIN
+            ;THROW 50007, 'El estado de presentismo debe ser ''Activo'' o ''Inactivo''.', 1;
+        END
+
+        IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+        BEGIN
+            ;THROW 50008, 'El socio con idSocio especificado no existe.', 1;
+        END
+
+        IF NOT EXISTS (SELECT 1 FROM actividades.deporteActivo WHERE idDeporteActivo = @idDeporteActivo)
+        BEGIN
+            ;THROW 50009, 'El deporte activo con idDeporteActivo especificado no existe.', 1;
+        END
+
+        IF EXISTS (SELECT 1 FROM actividades.presentismoActividadSocio WHERE idSocio = @idSocio AND idDeporteActivo = @idDeporteActivo)
+        BEGIN
+            ;THROW 50010, 'Ya existe un registro de presentismo para este socio y deporte activo.', 1;
+        END
+
+        BEGIN TRANSACTION;
+        INSERT INTO actividades.presentismoActividadSocio (idSocio, idDeporteActivo, fechaActividad, estadoPresentismo, profesorDeporte)
+        VALUES (@idSocio, @idDeporteActivo, @fechaActividad, @estadoPresentismo, @profesorDeporte);
+        COMMIT TRANSACTION;
+        PRINT 'Registro de presentismo insertado exitosamente.';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+    END CATCH;
+END;
+GO
+
+-- ------------------------------------------------------------------------------
+-- PROCEDIMIENTO: modificarPresentismoActividadSocio
+-- ------------------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE actividades.modificarPresentismoActividadSocio
+    @idSocio INT,
+    @idDeporteActivo INT,
+    @nuevaFechaActividad VARCHAR(10),
+    @nuevoEstadoPresentismo VARCHAR(8),
+    @nuevoProfesorDeporte VARCHAR(35)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        IF @nuevoEstadoPresentismo NOT IN ('Activo', 'Inactivo')
+        BEGIN
+            ;THROW 50011, 'El nuevo estado de presentismo debe ser ''Activo'' o ''Inactivo''.', 1;
+        END
+
+        BEGIN TRANSACTION;
+        UPDATE actividades.presentismoActividadSocio
+        SET
+            fechaActividad = @nuevaFechaActividad,
+            estadoPresentismo = @nuevoEstadoPresentismo,
+            profesorDeporte = @nuevoProfesorDeporte
+        WHERE
+            idSocio = @idSocio AND idDeporteActivo = @idDeporteActivo;
+
+        -- Verificar si se actualizó alguna fila
+        IF @@ROWCOUNT = 0
+        BEGIN
+            ROLLBACK TRANSACTION;
+            ;THROW 50012, 'No se encontró el registro de presentismo con el idSocio y idDeporteActivo especificados para actualizar.', 1;
+        END
+        COMMIT TRANSACTION;
+        PRINT 'Registro de presentismo actualizado exitosamente.';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+    END CATCH;
+END;
+GO
+
+-- ------------------------------------------------------------------------------
+-- PROCEDIMIENTO: eliminarPresentismoActividadSocio
+-- ------------------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE actividades.eliminarPresentismoActividadSocio
+    @idSocio INT,
+    @idDeporteActivo INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        DELETE FROM actividades.presentismoActividadSocio
+        WHERE idSocio = @idSocio AND idDeporteActivo = @idDeporteActivo;
+        -- Verificar si se eliminó alguna fila
+        IF @@ROWCOUNT = 0
+        BEGIN
+            ROLLBACK TRANSACTION;
+            ;THROW 50013, 'No se encontró el registro de presentismo con el idSocio y idDeporteActivo especificados para eliminar.', 1;
+        END
+        COMMIT TRANSACTION;
+        PRINT 'Registro de presentismo eliminado exitosamente.';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+    END CATCH;
+END;
+GO
+
+-- :::::::::::::::::::::::::::::::::::::::::::: PAGOS ::::::::::::::::::::::::::::::::::::::::::::
+
+
 CREATE OR ALTER PROCEDURE pagos.insertarTarjetaDisponible
   @tipoTarjeta VARCHAR(7),
   @descripcion VARCHAR(25)
@@ -2006,6 +2154,122 @@ BEGIN
     WHERE idFactura = @idFacturaOriginal;
   END
 END
+GO
+
+-- ### cuerpoFactura ###
+
+-- ------------------------------------------------------------------------------
+-- PROCEDIMIENTO: insertarCuerpoFactura
+-- ------------------------------------------------------------------------------
+
+CREATE OR ALTER PROCEDURE pagos.insertarCuerpoFactura
+    @idFactura INT,
+    @idItemFactura INT,
+    @tipoItem VARCHAR(25),
+    @descripcionItem VARCHAR(25),
+    @importeItem DECIMAL(10, 2)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        IF @importeItem <= 0
+        BEGIN
+            ;THROW 50001, 'El importe del ítem debe ser un valor positivo.', 1;
+        END
+
+        IF NOT EXISTS (SELECT 1 FROM pagos.facturaEmitida WHERE idFactura = @idFactura)
+        BEGIN
+            ;THROW 50002, 'La factura padre con idFactura especificado no existe.', 1;
+        END
+
+        IF EXISTS (SELECT 1 FROM pagos.cuerpoFactura WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura)
+        BEGIN
+            ;THROW 50003, 'Ya existe un ítem de factura con el mismo idFactura y idItemFactura.', 1;
+        END
+
+        BEGIN TRANSACTION;
+        INSERT INTO pagos.cuerpoFactura (idFactura, idItemFactura, tipoItem, descripcionItem, importeItem)
+        VALUES (@idFactura, @idItemFactura, @tipoItem, @descripcionItem, @importeItem);
+        COMMIT TRANSACTION;
+        PRINT 'Ítem de factura insertado exitosamente.';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+    END CATCH;
+END;
+GO
+
+-- ------------------------------------------------------------------------------
+-- PROCEDIMIENTO: modificarCuerpoFactura
+-- ------------------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE pagos.modificarCuerpoFactura
+    @idFactura INT,
+    @idItemFactura INT,
+    @nuevoTipoItem VARCHAR(25),
+    @nuevaDescripcionItem VARCHAR(25),
+    @nuevoImporteItem DECIMAL(10, 2)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        IF @nuevoImporteItem <= 0
+        BEGIN
+            ;THROW 50004, 'El nuevo importe del ítem debe ser un valor positivo.', 1;
+        END
+
+        BEGIN TRANSACTION;
+        UPDATE pagos.cuerpoFactura
+        SET
+            tipoItem = @nuevoTipoItem,
+            descripcionItem = @nuevaDescripcionItem,
+            importeItem = @nuevoImporteItem
+        WHERE
+            idFactura = @idFactura AND idItemFactura = @idItemFactura;
+
+        -- Verificar si se actualizó alguna fila
+        IF @@ROWCOUNT = 0
+        BEGIN
+            ROLLBACK TRANSACTION;
+            ;THROW 50005, 'No se encontró el ítem de factura con el idFactura y idItemFactura especificados para actualizar.', 1;
+        END
+        COMMIT TRANSACTION;
+        PRINT 'Ítem de factura actualizado exitosamente.';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+    END CATCH;
+END;
+GO
+
+-- ------------------------------------------------------------------------------
+-- PROCEDIMIENTO: eliminarCuerpoFactura
+-- ------------------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE pagos.eliminarCuerpoFactura
+    @idFactura INT,
+    @idItemFactura INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        DELETE FROM pagos.cuerpoFactura
+        WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
+        -- Verificar si se eliminó alguna fila
+        IF @@ROWCOUNT = 0
+        BEGIN
+            ROLLBACK TRANSACTION;
+            ;THROW 50006, 'No se encontró el ítem de factura con el idFactura y idItemFactura especificados para eliminar.', 1;
+        END
+        COMMIT TRANSACTION;
+        PRINT 'Ítem de factura eliminado exitosamente.'
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+    END CATCH;
+END;
 GO
 
 -- :::::::::::::::::::::::::::::::::::::::::::: DESCUENTOS ::::::::::::::::::::::::::::::::::::::::::::
