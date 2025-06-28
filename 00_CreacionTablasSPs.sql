@@ -250,9 +250,9 @@ CREATE TABLE pagos.facturaEmitida (
 	nombreSocio VARCHAR(10) NOT NULL,
 	apellidoSocio VARCHAR(10) NOT NULL,
 	fechaEmision DATE DEFAULT GETDATE(),
-	cuilDeudor INT NOT NULL,
+	cuilDeudor VARCHAR(13) NOT NULL,
 	domicilio VARCHAR(35) NOT NULL,
-	modalidadCobro VARCHAR(25) NOT NULL,
+	modalidadCobro VARCHAR(8) NOT NULL  CHECK (modalidadCobro IN ('Contado', 'Cuotas:_')),
 	importeBruto DECIMAL(10, 2) NOT NULL CHECK (importeBruto >= 0),
 	importeTotal DECIMAL(10, 2) NOT NULL CHECK (importeTotal >= 0),
 	CONSTRAINT PK_facturaEmitida PRIMARY KEY (idFactura),
@@ -784,6 +784,7 @@ BEGIN
   WHERE idSocio = @idSocio;
 END;
 GO
+
 --rolDisponible
 
 CREATE OR ALTER PROCEDURE socios.insertarRolDisponible
@@ -1066,10 +1067,6 @@ END
 GO
 
 --grupoFamiliarActivo
-
-IF OBJECT_ID('socios.sp_InsertarGrupoFamiliarActivo','P') IS NOT NULL
-  DROP PROCEDURE socios.insertarGrupoFamiliarActivo;
-GO
 
 CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliarActivo
   @idSocio INT,
@@ -1686,7 +1683,7 @@ BEGIN
   SET NOCOUNT ON;
 
   -- 1. Validar membresía activa
-  IF NOT EXISTS (
+  /*IF NOT EXISTS (
     SELECT 1
     FROM socios.estadoMembresiaSocio
     WHERE idSocio = @idSocio AND estadoMorosidadMembresia = 'Activo'
@@ -1694,7 +1691,7 @@ BEGIN
   BEGIN
     RAISERROR('El socio no tiene una membresía activa.', 16, 1);
     RETURN;
-  END;
+  END;*/
 
   -- 2. Validar existencia de la tarjeta disponible
   IF NOT EXISTS (
@@ -1892,383 +1889,654 @@ BEGIN
 END
 GO
 
-CREATE OR ALTER PROCEDURE pagos.insertarFacturaEmitida
-  @idSocio                       INT,
-  @categoriaSocio                INT,
-  @idServicioFacturado           INT,
-  @descripcionServicioFacturado VARCHAR(50),
-  @domicilio                     VARCHAR(35),
-  @modalidadCobro                VARCHAR(25),
-  @importeBruto                  DECIMAL(10,2)
+CREATE OR ALTER PROCEDURE pagos.insertarFacturaActiva
+  @idSocio                  INT,
+  @categoriaSocio           INT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  DECLARE 
-    @nombreSocio         VARCHAR(10),
-    @apellidoSocio       VARCHAR(10),
-    @cuilDeudor          INT,
-    @porcTotalDescuento  DECIMAL(5,2),
-    @importeTotalCalc    DECIMAL(10,2),
-    @fechaEmisionHoy     DATE = CAST(GETDATE() AS DATE),
-    @fechaPrimerVto      DATE,
-    @fechaSegundoVto     DATE;
+  -- 1) Validar que el socio y su categoría existan
+  IF NOT EXISTS (
+    SELECT 1 FROM socios.socio            WHERE idSocio = @idSocio
+  ) OR NOT EXISTS (
+    SELECT 1 FROM socios.categoriaMembresiaSocio
+    WHERE idCategoria = @categoriaSocio
+      AND estadoCategoriaSocio = 1
+  )
+    THROW 60001, 'Socio o categoría no válidos.', 1;
 
-  -- 1) Validar socio activo y traer datos
-  SELECT 
-    @nombreSocio   = nombre,
-    @apellidoSocio = apellido,
-    @cuilDeudor    = cuil
-  FROM socios.socio
-  WHERE idSocio = @idSocio
-    AND categoriaSocio = @categoriaSocio
-    AND estadoMembresia = 'Activo';
+  -- 2) Insertar con fechas calculadas
+  DECLARE @hoy DATE = CAST(GETDATE() AS DATE);
 
-  IF @@ROWCOUNT = 0
-  BEGIN
-    RAISERROR('Socio %d / categoría %d no encontrado o inactivo.',16,1,@idSocio,@categoriaSocio);
-    RETURN;
-  END
-
-  -- 2) Calcular descuentos
-  SELECT @porcTotalDescuento = COALESCE(SUM(dd.porcentajeDescontado), 0)
-  FROM descuentos.descuentoDisponible dd
-  JOIN descuentos.descuentoVigente dv
-    ON dd.idDescuento = dv.idDescuento
-  WHERE dv.idSocio = @idSocio AND dd.estadoDescuento = 1;
-
-  -- 3) Calcular importe final
-  SET @importeTotalCalc = ROUND(@importeBruto * (1 - @porcTotalDescuento / 100.0), 2);
-
-  -- 4) Vencimientos: 5 y 10 días desde hoy
-  SET @fechaPrimerVto  = DATEADD(DAY, 5, @fechaEmisionHoy);
-  SET @fechaSegundoVto = DATEADD(DAY, 10, @fechaEmisionHoy);
-
-  -- 5) Insertar factura
-  INSERT INTO pagos.facturaEmitida (
-    idSocio, categoriaSocio,
-    idServicioFacturado, descripcionServicioFacturado,
-    nombreSocio, apellidoSocio,
-    fechaEmision, cuilDeudor, domicilio, modalidadCobro,
-    importeBruto, importeTotal,
-    fechaPrimerVencimiento, fechaSegundoVencimiento,
-    estadoFactura
+  INSERT INTO pagos.facturaActiva (
+    idSocio, categoriaSocio, estadoFactura,
+    fechaEmision, fechaPrimerVencimiento, fechaSegundoVencimiento
   )
   VALUES (
-    @idSocio, @categoriaSocio,
-    @idServicioFacturado, @descripcionServicioFacturado,
-    @nombreSocio, @apellidoSocio,
-    @fechaEmisionHoy, @cuilDeudor, @domicilio, @modalidadCobro,
-    @importeBruto, @importeTotalCalc,
-    @fechaPrimerVto, @fechaSegundoVto,
-    'Pendiente'
+    @idSocio, @categoriaSocio, 'Pendiente',
+    @hoy,
+    DATEADD(DAY, 5, @hoy),
+    DATEADD(DAY, 10, @hoy)
   );
-END
+END;
 GO
 
-CREATE OR ALTER PROCEDURE pagos.actualizarEstadoFacturaEmitida
-  @idFactura INT,
-  @nuevoEstado VARCHAR(10)
+CREATE OR ALTER PROCEDURE pagos.actualizarEstadoFacturaActiva
+  @idFactura    INT,
+  @nuevoEstado  VARCHAR(15)
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- Validar nuevo estado permitido
-  IF @nuevoEstado NOT IN ('Pendiente', 'Pagada')
-  BEGIN
-    RAISERROR('Estado no válido. Solo se permite "Pendiente" o "Pagada".', 16, 1);
-    RETURN;
-  END
+  -- 1) Validar estado permitido
+  IF @nuevoEstado NOT IN ('Pendiente','Pagada','Nulificada')
+    THROW 60002, 'Estado no válido.', 1;
 
-  -- Actualizar estado solo si la factura existe
-  IF NOT EXISTS (SELECT 1 FROM pagos.facturaEmitida WHERE idFactura = @idFactura)
-  BEGIN
-    RAISERROR('La factura con ID %d no existe.', 16, 1, @idFactura);
-    RETURN;
-  END
+  -- 2) Verificar que exista la factura
+  IF NOT EXISTS (
+    SELECT 1 FROM pagos.facturaActiva WHERE idFactura = @idFactura
+  )
+    THROW 60003, 'Factura activa no encontrada.', 1;
 
-  UPDATE pagos.facturaEmitida
+  -- 3) Actualizar
+  UPDATE pagos.facturaActiva
   SET estadoFactura = @nuevoEstado
   WHERE idFactura = @idFactura;
-END
+END;
 GO
 
-CREATE OR ALTER PROCEDURE pagos.nulificarFacturaEmitida
-  @idFactura INT
+CREATE OR ALTER PROCEDURE pagos.emitirFactura
+  @idFactura         INT,
+  @cuilDeudor        VARCHAR(13),
+  @domicilio         VARCHAR(35),
+  @modalidadCobro    VARCHAR(25),  -- e.g. 'Contado' o 'Cuotas:6'
+  @importeBruto      DECIMAL(10,2)
 AS
 BEGIN
   SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- 1) Validar existencia y estado de la factura activa
+    DECLARE @estadoActiva VARCHAR(15);
+    SELECT @estadoActiva = estadoFactura
+    FROM pagos.facturaActiva
+    WHERE idFactura = @idFactura;
 
-  DECLARE @estadoActual VARCHAR(10);
+    IF @estadoActiva IS NULL
+      THROW 60010, 'Factura activa no encontrada.', 1;
+    IF @estadoActiva <> 'Pendiente'
+      THROW 60011, 'Sólo se puede emitir una factura pendiente.', 1;
 
-  -- Verificar que exista
-  SELECT @estadoActual = estadoFactura
-  FROM pagos.facturaEmitida
-  WHERE idFactura = @idFactura;
+    -- 2) Validar CUIL
+    IF pagos.validarCUIL(@cuilDeudor) = 0
+      THROW 60012, 'CUIL inválido.', 1;
 
-  IF @estadoActual IS NULL
-  BEGIN
-    RAISERROR('Factura con ID %d no encontrada.', 16, 1, @idFactura);
-    RETURN;
-  END
+    -- 3) Calcular importeTotal (aquí igualamos a bruto; lógica de descuento puede ir aparte)
+    DECLARE @importeTotal DECIMAL(10,2) = @importeBruto;
 
-  -- Validar que no esté pagada
-  IF @estadoActual = 'Pagada'
-  BEGIN
-    RAISERROR('No se puede nulificar una factura que ya fue pagada.', 16, 1);
-    RETURN;
-  END
+    -- 4) Obtener nombre y apellido del socio
+    DECLARE @nombreSocio VARCHAR(10), @apellidoSocio VARCHAR(10);
+    SELECT @nombreSocio = nombre, @apellidoSocio = apellido
+    FROM socios.socio
+    WHERE idSocio = (SELECT idSocio FROM pagos.facturaActiva WHERE idFactura = @idFactura);
 
-  -- Nulificar
-  UPDATE pagos.facturaEmitida
-  SET estadoFactura = 'Nulificada'
-  WHERE idFactura = @idFactura;
-END
+    -- 5) Insertar en facturaEmitida
+    INSERT INTO pagos.facturaEmitida (
+      idFactura, nombreSocio, apellidoSocio,
+      fechaEmision, cuilDeudor, domicilio,
+      modalidadCobro, importeBruto, importeTotal
+    )
+    VALUES (
+      @idFactura, @nombreSocio, @apellidoSocio,
+      GETDATE(), @cuilDeudor, @domicilio,
+      @modalidadCobro, @importeBruto, @importeTotal
+    );
+
+    -- 6) Marcar activa como pagada
+    UPDATE pagos.facturaActiva
+    SET estadoFactura = 'Pagada'
+    WHERE idFactura = @idFactura;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
 GO
 
-CREATE OR ALTER PROCEDURE pagos.insertarReembolso
+CREATE OR ALTER PROCEDURE pagos.insertarCuerpoFactura
+  @idFactura INT,
+  @tipoItem VARCHAR(20),
+  @descripcionItem VARCHAR(25),
+  @importeItem DECIMAL(10,2)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Validar existencia de factura emitida
+    IF NOT EXISTS (SELECT 1 FROM pagos.facturaEmitida WHERE idFactura = @idFactura)
+      THROW 61001, 'Factura no encontrada.', 1;
+
+    -- Generar nuevo idItemFactura
+    DECLARE @newItem INT;
+    SELECT @newItem = COALESCE(MAX(idItemFactura), 0) + 1
+      FROM pagos.cuerpoFactura
+     WHERE idFactura = @idFactura;
+
+    -- Insertar ítem
+    INSERT INTO pagos.cuerpoFactura (
+      idFactura, idItemFactura, tipoItem, descripcionItem, importeItem
+    ) VALUES (
+      @idFactura, @newItem, @tipoItem, @descripcionItem, @importeItem
+    );
+
+    -- Obtener estado de saldoAFavor
+    DECLARE @idSocio INT, @saldo DECIMAL(10,2);
+    SELECT @idSocio = fa.idSocio
+      FROM pagos.facturaActiva fa
+     WHERE fa.idFactura = @idFactura;
+
+    SELECT @saldo = saldoTotal FROM socios.saldoAFavorSocio WHERE idSocio = @idSocio;
+
+    IF @saldo >= @importeItem
+    BEGIN
+      -- Descontar del saldoAFavorSocio sin afectar importeBruto ni importeTotal
+      UPDATE socios.saldoAFavorSocio
+      SET saldoTotal = saldoTotal - @importeItem
+      WHERE idSocio = @idSocio;
+    END
+    ELSE
+    BEGIN
+      -- Actualizar importeBruto de facturaEmitida
+      UPDATE pagos.facturaEmitida
+      SET importeBruto = importeBruto + @importeItem
+      WHERE idFactura = @idFactura;
+
+      -- Recalcular importeTotal con descuentos vigentes
+      DECLARE @sumDesc DECIMAL(5,2), @bruto DECIMAL(10,2), @nuevoTotal DECIMAL(10,2);
+      SELECT @bruto = fe.importeBruto
+        FROM pagos.facturaEmitida fe
+       WHERE fe.idFactura = @idFactura;
+
+      SELECT @sumDesc = COALESCE(SUM(dd.porcentajeDescontado),0)
+        FROM descuentos.descuentoDisponible dd
+        JOIN descuentos.descuentoVigente dv ON dd.idDescuento = dv.idDescuento
+       WHERE dv.idSocio = @idSocio;
+
+      SET @nuevoTotal = ROUND(@bruto * (1 - @sumDesc/100.0), 2);
+
+      UPDATE pagos.facturaEmitida
+      SET importeTotal = @nuevoTotal
+      WHERE idFactura = @idFactura;
+    END
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.actualizarCuerpoFactura
+  @idFactura INT,
+  @idItemFactura INT,
+  @nuevoTipoItem VARCHAR(20) = NULL,
+  @nuevaDescripcion VARCHAR(25) = NULL,
+  @nuevoImporteItem DECIMAL(10,2) = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Validar ítem existente
+    DECLARE @oldImporte DECIMAL(10,2);
+    SELECT @oldImporte = importeItem
+      FROM pagos.cuerpoFactura
+     WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
+    IF @oldImporte IS NULL
+      THROW 61011, 'Ítem no encontrado.', 1;
+
+    -- Calcular delta
+    DECLARE @delta DECIMAL(10,2) = COALESCE(@nuevoImporteItem, @oldImporte) - @oldImporte;
+
+    -- Actualizar ítem
+    UPDATE pagos.cuerpoFactura
+    SET
+      tipoItem = COALESCE(@nuevoTipoItem, tipoItem),
+      descripcionItem = COALESCE(@nuevaDescripcion, descripcionItem),
+      importeItem = COALESCE(@nuevoImporteItem, importeItem)
+    WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
+
+    -- Actualizar importeBruto
+    UPDATE pagos.facturaEmitida
+    SET importeBruto = importeBruto + @delta
+    WHERE idFactura = @idFactura;
+
+    -- Recalcular importeTotal con descuentos
+    DECLARE @idSocio INT, @sumDesc DECIMAL(5,2), @bruto DECIMAL(10,2), @nuevoTotal DECIMAL(10,2);
+    SELECT @idSocio = fa.idSocio, @bruto = fe.importeBruto
+      FROM pagos.facturaActiva fa
+      JOIN pagos.facturaEmitida fe ON fa.idFactura = fe.idFactura
+     WHERE fe.idFactura = @idFactura;
+
+    SELECT @sumDesc = COALESCE(SUM(dd.porcentajeDescontado),0)
+      FROM descuentos.descuentoDisponible dd
+      JOIN descuentos.descuentoVigente dv ON dd.idDescuento = dv.idDescuento
+     WHERE dv.idSocio = @idSocio;
+
+    SET @nuevoTotal = ROUND(@bruto * (1 - @sumDesc/100.0), 2);
+    UPDATE pagos.facturaEmitida SET importeTotal = @nuevoTotal WHERE idFactura = @idFactura;
+
+    -- Ajustar saldoAFavorSocio según delta
+    DECLARE @saldo DECIMAL(10,2);
+    SELECT @saldo = saldoTotal FROM socios.saldoAFavorSocio WHERE idSocio = @idSocio;
+    IF @delta > 0 AND @saldo < @delta
+      THROW 61012, 'Saldo insuficiente para ajuste.', 1;
+
+    UPDATE socios.saldoAFavorSocio
+    SET saldoTotal = saldoTotal - @delta
+    WHERE idSocio = @idSocio;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.eliminarCuerpoFactura
+  @idFactura INT,
+  @idItemFactura INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Obtener importe antes de borrar
+    DECLARE @importeOld DECIMAL(10,2);
+    SELECT @importeOld = importeItem
+      FROM pagos.cuerpoFactura
+     WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
+    IF @importeOld IS NULL
+      THROW 61021, 'Ítem no encontrado.', 1;
+
+    -- Borrar ítem
+    DELETE FROM pagos.cuerpoFactura
+    WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
+
+    -- Actualizar importeBruto
+    UPDATE pagos.facturaEmitida
+    SET importeBruto = importeBruto - @importeOld
+    WHERE idFactura = @idFactura;
+
+    -- Recalcular importeTotal con descuentos
+    DECLARE @idSocio INT, @sumDesc DECIMAL(5,2), @bruto DECIMAL(10,2), @nuevoTotal DECIMAL(10,2);
+    SELECT @idSocio = fa.idSocio, @bruto = fe.importeBruto
+      FROM pagos.facturaActiva fa
+      JOIN pagos.facturaEmitida fe ON fa.idFactura = fe.idFactura
+     WHERE fe.idFactura = @idFactura;
+
+    SELECT @sumDesc = COALESCE(SUM(dd.porcentajeDescontado),0)
+      FROM descuentos.descuentoDisponible dd
+      JOIN descuentos.descuentoVigente dv ON dd.idDescuento = dv.idDescuento
+     WHERE dv.idSocio = @idSocio;
+
+    SET @nuevoTotal = ROUND(@bruto * (1 - @sumDesc/100.0), 2);
+    UPDATE pagos.facturaEmitida SET importeTotal = @nuevoTotal WHERE idFactura = @idFactura;
+
+    -- Devolver importe al saldoAFavorSocio
+    UPDATE socios.saldoAFavorSocio
+    SET saldoTotal = saldoTotal + @importeOld
+    WHERE idSocio = @idSocio;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.insertarCobroFactura
+  @idFacturaCobrada INT,
+  @idSocio          INT,
+  @categoriaSocio   INT,
+  @newIdCobro       INT OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    DECLARE 
+      @modalidad    VARCHAR(25),
+      @importeTotal DECIMAL(10,2),
+      @numCuotas    INT,
+      @nextCuota    INT,
+      @nombre       VARCHAR(10),
+      @apellido     VARCHAR(10),
+      @cuilDeudor   INT,
+      @domicilio    VARCHAR(20),
+      @totalAbonado DECIMAL(10,2);
+
+    -- Traer datos de facturaEmitida
+		SELECT
+			@modalidad    = fe.modalidadCobro,
+			@importeTotal = fe.importeTotal,
+			@cuilDeudor   = fe.cuilDeudor,
+			@domicilio    = fe.domicilio
+			FROM pagos.facturaEmitida fe
+			WHERE fe.idFactura = @idFacturaCobrada;
+			IF @@ROWCOUNT = 0 THROW 63001, 'FacturaEmitida no encontrada.', 1;
+
+    -- Calcular cuotas
+    SET @numCuotas = TRY_CAST(SUBSTRING(@modalidad,CHARINDEX(':',@modalidad)+1,10) AS INT);
+    IF @numCuotas IS NULL OR @numCuotas<=0 SET @numCuotas = 1;
+
+    -- Siguiente cuota
+    SELECT @nextCuota = COALESCE(MAX(numeroCuota),0)+1
+      FROM pagos.cobroFactura
+     WHERE idFacturaCobrada = @idFacturaCobrada;
+    IF @nextCuota > @numCuotas THROW 63002, 'Todas las cuotas ya fueron cobradas.', 1;
+
+    -- Datos del socio
+		SELECT
+		@nombre   = s.nombre,
+		@apellido = s.apellido
+		FROM socios.socio s
+		WHERE s.idSocio = @idSocio
+		AND s.categoriaSocio = @categoriaSocio;
+		IF @@ROWCOUNT = 0 THROW 63003, 'Socio o categoría no válidos.', 1;
+
+    -- Calcular totalAbonado de esta cuota
+    SET @totalAbonado = ROUND(@importeTotal*1.0/@numCuotas,2);
+
+    -- Insertar
+    INSERT INTO pagos.cobroFactura (
+      idFacturaCobrada, idSocio, categoriaSocio,
+      fechaEmisionCobro, nombreSocio, apellidoSocio,
+      cuilDeudor, domicilio, modalidadCobro,
+      numeroCuota, totalAbonado
+    ) VALUES (
+      @idFacturaCobrada,@idSocio,@categoriaSocio,
+      GETDATE(),@nombre,@apellido,
+      @cuilDeudor,@domicilio,@modalidad,
+      @nextCuota,@totalAbonado
+    );
+    SET @newIdCobro = SCOPE_IDENTITY();
+
+    -- Si totalAbonado acumulado iguala importeTotal, actualizar facturaActiva
+    DECLARE @sumCobros DECIMAL(10,2);
+    SELECT @sumCobros = SUM(totalAbonado)
+      FROM pagos.cobroFactura
+     WHERE idFacturaCobrada = @idFacturaCobrada;
+    IF @sumCobros = @importeTotal
+    BEGIN
+      UPDATE pagos.facturaActiva
+      SET estadoFactura = 'Pagada'
+      WHERE idFactura = @idFacturaCobrada;
+    END
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.actualizarCobroFactura
+  @idCobro           INT,
+  @idFacturaCobrada  INT,
+  @nuevoDomicilio    VARCHAR(20)    = NULL,
+  @nuevoTotalAbonado DECIMAL(10,2)  = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  IF NOT EXISTS (
+    SELECT 1 FROM pagos.cobroFactura cf WHERE cf.idCobro = @idCobro AND cf.idFacturaCobrada = @idFacturaCobrada
+  ) THROW 63010, 'Cobro no encontrado.', 1;
+
+  UPDATE pagos.cobroFactura
+  SET
+    domicilio    = COALESCE(@nuevoDomicilio, domicilio),
+    totalAbonado = COALESCE(@nuevoTotalAbonado, totalAbonado)
+  WHERE idCobro = @idCobro AND idFacturaCobrada = @idFacturaCobrada;
+
+  -- Revalidar estado facturaActiva si cambió monto
+  DECLARE @importeTotal DECIMAL(10,2), @sumCobros DECIMAL(10,2);
+  SELECT @importeTotal = fe.importeTotal
+    FROM pagos.facturaEmitida fe
+    WHERE fe.idFactura = @idFacturaCobrada;
+  SELECT @sumCobros = SUM(cf.totalAbonado)
+    FROM pagos.cobroFactura cf
+    WHERE cf.idFacturaCobrada = @idFacturaCobrada;
+  IF @sumCobros = @importeTotal
+    UPDATE pagos.facturaActiva
+    SET estadoFactura = 'Pagada'
+    WHERE idFactura = @idFacturaCobrada;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.eliminarCobroFactura
+  @idCobro           INT,
+  @idFacturaCobrada  INT,
+  @cuilDestinatario  BIGINT,
+  @medioDePagoUsado  VARCHAR(50),
+  @razonReembolso    VARCHAR(50)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Verificar existencia del cobro
+    DECLARE @monto DECIMAL(10,2), @idSocio INT;
+    SELECT @monto = totalAbonado, @idSocio = idSocio
+      FROM pagos.cobroFactura
+     WHERE idCobro = @idCobro AND idFacturaCobrada = @idFacturaCobrada;
+    IF @monto IS NULL
+      THROW 63020, 'Cobro no encontrado.', 1;
+
+    -- Insertar reembolso
+    INSERT INTO pagos.reembolso (
+      idCobroOriginal,
+      idFacturaOriginal,
+      idSocioDestinatario,
+      montoReembolsado,
+      cuilDestinatario,
+      medioDePagoUsado,
+      razonReembolso
+    ) VALUES (
+      @idCobro,
+      @idFacturaCobrada,
+      @idSocio,
+      @monto,
+      @cuilDestinatario,
+      @medioDePagoUsado,
+      @razonReembolso
+    );
+
+    -- Eliminar cobro
+    DELETE FROM pagos.cobroFactura
+    WHERE idCobro = @idCobro AND idFacturaCobrada = @idFacturaCobrada;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.insertarCuerpoCobro
+  @idCobro       INT,
+  @idFactura     INT,
+  @tipoItem      VARCHAR(20),
+  @descripcion   VARCHAR(25),
+  @importeItem   DECIMAL(10,2)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Validar cobro
+    IF NOT EXISTS(
+      SELECT 1 FROM pagos.cobroFactura cf WHERE cf.idCobro = @idCobro AND cf.idFacturaCobrada = @idFactura
+    ) THROW 63030, 'CobroFactura no encontrado.', 1;
+
+    -- Ajuste por morosidad
+    DECLARE @estadoMorosidad VARCHAR(22);
+    SELECT @estadoMorosidad = ems.estadoMorosidadMembresia
+    FROM socios.estadoMembresiaSocio ems
+    WHERE ems.idSocio = (
+      SELECT cf2.idSocio FROM pagos.cobroFactura cf2 WHERE cf2.idCobro = @idCobro
+    );
+    IF @estadoMorosidad = 'Moroso-1er Vencimiento'
+      SET @importeItem = ROUND(@importeItem * 1.15, 2);
+
+    -- Nuevo idItemCobro
+    DECLARE @newItem INT;
+    SELECT @newItem = COALESCE(MAX(cc.idItemCobro), 0) + 1
+      FROM pagos.cuerpoCobro cc
+     WHERE cc.idCobro = @idCobro AND cc.idFactura = @idFactura;
+
+    INSERT INTO pagos.cuerpoCobro (
+      idCobro, idFactura, idItemCobro, tipoItem, despricionItem, importeItem
+    ) VALUES (
+      @idCobro, @idFactura, @newItem, @tipoItem, @descripcion, @importeItem
+    );
+
+    -- Ajustar totalAbonado
+    UPDATE cf
+    SET totalAbonado = totalAbonado + @importeItem
+    FROM pagos.cobroFactura cf
+    WHERE cf.idCobro = @idCobro AND cf.idFacturaCobrada = @idFactura;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.actualizarCuerpoCobro
+  @idCobro       INT,
+  @idFactura     INT,
+  @idItemCobro   INT,
+  @nuevoTipo     VARCHAR(20)   = NULL,
+  @nuevaDesc     VARCHAR(25)   = NULL,
+  @nuevoImporte  DECIMAL(10,2) = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    DECLARE @oldImp DECIMAL(10,2);
+    SELECT @oldImp = cc.importeItem
+      FROM pagos.cuerpoCobro cc
+     WHERE cc.idCobro = @idCobro AND cc.idFactura = @idFactura AND cc.idItemCobro = @idItemCobro;
+    IF @oldImp IS NULL THROW 63040, 'Ítem no encontrado.', 1;
+
+    DECLARE @newImp DECIMAL(10,2) = COALESCE(@nuevoImporte, @oldImp);
+    DECLARE @delta DECIMAL(10,2) = @newImp - @oldImp;
+
+    UPDATE pagos.cuerpoCobro
+    SET
+      tipoItem      = COALESCE(@nuevoTipo, tipoItem),
+      despricionItem= COALESCE(@nuevaDesc, despricionItem),
+      importeItem   = @newImp
+    WHERE idCobro = @idCobro AND idFactura = @idFactura AND idItemCobro = @idItemCobro;
+
+    UPDATE cf
+    SET totalAbonado = totalAbonado + @delta
+    FROM pagos.cobroFactura cf
+    WHERE cf.idCobro = @idCobro AND cf.idFacturaCobrada = @idFactura;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.eliminarCobroFactura
   @idCobroOriginal     INT,
   @idFacturaOriginal   INT,
   @idSocioDestinatario INT,
-  @montoReembolsado    DECIMAL(10, 2),
   @cuilDestinatario    BIGINT,
   @medioDePagoUsado    VARCHAR(50),
   @razonReembolso      VARCHAR(50)
 AS
 BEGIN
   SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Obtener datos del cobro
+    DECLARE @montoTotal DECIMAL(10,2), @socioOriginal INT;
+    SELECT
+      @montoTotal = cf.totalAbonado,
+      @socioOriginal = cf.idSocio
+    FROM pagos.cobroFactura cf
+    WHERE cf.idCobro = @idCobroOriginal
+      AND cf.idFacturaCobrada = @idFacturaOriginal;
+    IF @montoTotal IS NULL
+      THROW 65001, 'Cobro no encontrado.', 1;
 
-  DECLARE @totalAbonado DECIMAL(10, 2),
-          @socioCobro   INT;
+    -- Verificar destinatario
+    IF @socioOriginal <> @idSocioDestinatario
+      THROW 65002, 'El socio destinatario no coincide con el socio del cobro.', 1;
 
-  -- 1) Verificar existencia del cobro
-  SELECT @totalAbonado = totalAbonado,
-         @socioCobro   = idSocio
-  FROM pagos.cobroFactura
-  WHERE idCobro = @idCobroOriginal
-    AND idFacturaCobrada = @idFacturaOriginal;
+    -- Calcular monto de reembolso: 60% si lluvia
+    DECLARE @montoReembolso DECIMAL(10,2);
+    IF UPPER(@razonReembolso) = 'DÍA DE LLUVIA'
+      SET @montoReembolso = ROUND(@montoTotal * 0.60, 2);
+    ELSE
+      SET @montoReembolso = @montoTotal;
 
-  IF @totalAbonado IS NULL
-  BEGIN
-    RAISERROR('Cobro %d para factura %d no encontrado.', 16, 1, @idCobroOriginal, @idFacturaOriginal);
-    RETURN;
-  END
+    -- Insertar en reembolso
+    INSERT INTO pagos.reembolso (
+      idCobroOriginal,
+      idFacturaOriginal,
+      idSocioDestinatario,
+      montoReembolsado,
+      cuilDestinatario,
+      medioDePagoUsado,
+      razonReembolso
+    ) VALUES (
+      @idCobroOriginal,
+      @idFacturaOriginal,
+      @idSocioDestinatario,
+      @montoReembolso,
+      @cuilDestinatario,
+      @medioDePagoUsado,
+      @razonReembolso
+    );
 
-  -- 2) Verificar que el socio sea el destinatario del cobro original
-  IF @socioCobro != @idSocioDestinatario
-  BEGIN
-    RAISERROR('El socio destinatario no coincide con el socio original del cobro.', 16, 1);
-    RETURN;
-  END
+    -- Eliminar el cobro original
+    DELETE FROM pagos.cobroFactura
+    WHERE idCobro = @idCobroOriginal
+      AND idFacturaCobrada = @idFacturaOriginal;
 
-  -- 3) Validar que el monto sea razonable
-  IF @montoReembolsado > @totalAbonado
-  BEGIN
-   DECLARE @montoStr VARCHAR(20), @abonadoStr VARCHAR(20);
-	SET @montoStr = CONVERT(VARCHAR(20), @montoReembolsado);
-	SET @abonadoStr = CONVERT(VARCHAR(20), @totalAbonado);
-
-	RAISERROR('El monto reembolsado (%s) no puede exceder lo abonado (%s).', 16, 1,
-          @montoStr, @abonadoStr);
-  RETURN;
-  END
-
-  -- 4) (Opcional) Verificar si ya existe reembolso para este cobro
-  IF EXISTS (
-    SELECT 1 FROM pagos.reembolso
-    WHERE idCobroOriginal = @idCobroOriginal AND idFacturaOriginal = @idFacturaOriginal
-  )
-  BEGIN
-    RAISERROR('Ya existe un reembolso registrado para este cobro.', 16, 1);
-    RETURN;
-  END
-
-  -- 5) Insertar reembolso
-  INSERT INTO pagos.reembolso (
-    idCobroOriginal,
-    idFacturaOriginal,
-    idSocioDestinatario,
-    montoReembolsado,
-    cuilDestinatario,
-    medioDePagoUsado,
-    razonReembolso
-  )
-  VALUES (
-    @idCobroOriginal,
-    @idFacturaOriginal,
-    @idSocioDestinatario,
-    @montoReembolsado,
-    @cuilDestinatario,
-    @medioDePagoUsado,
-    @razonReembolso
-  );
-END
-GO
-
-CREATE OR ALTER PROCEDURE pagos.eliminarReembolso
-  @idFacturaReembolso  INT,
-  @idCobroOriginal     INT,
-  @idFacturaOriginal   INT
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  DECLARE @estadoFacturaActual VARCHAR(10);
-
-  -- Verificar existencia del reembolso
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pagos.reembolso
-    WHERE idFacturaReembolso = @idFacturaReembolso
-      AND idCobroOriginal = @idCobroOriginal
-      AND idFacturaOriginal = @idFacturaOriginal
-  )
-  BEGIN
-    RAISERROR('No se encontró un reembolso con los datos proporcionados.', 16, 1);
-    RETURN;
-  END
-
-  -- Obtener estado actual de la factura
-  SELECT @estadoFacturaActual = estadoFactura
-  FROM pagos.facturaEmitida
-  WHERE idFactura = @idFacturaOriginal;
-
-  -- Verificar que la factura exista
-  IF @estadoFacturaActual IS NULL
-  BEGIN
-    RAISERROR('Factura original %d no encontrada.', 16, 1, @idFacturaOriginal);
-    RETURN;
-  END
-
-  -- Eliminar el reembolso
-  DELETE FROM pagos.reembolso
-  WHERE idFacturaReembolso = @idFacturaReembolso
-    AND idCobroOriginal = @idCobroOriginal
-    AND idFacturaOriginal = @idFacturaOriginal;
-
-  -- Restaurar factura si estaba nulificada y NO está pagada
-  IF @estadoFacturaActual = 'Nulificada'
-  BEGIN
-    UPDATE pagos.facturaEmitida
-    SET estadoFactura = 'Pendiente'
-    WHERE idFactura = @idFacturaOriginal;
-  END
-END
-GO
-
--- ### cuerpoFactura ###
-
--- ------------------------------------------------------------------------------
--- PROCEDIMIENTO: insertarCuerpoFactura
--- ------------------------------------------------------------------------------
-
-CREATE OR ALTER PROCEDURE pagos.insertarCuerpoFactura
-    @idFactura INT,
-    @idItemFactura INT,
-    @tipoItem VARCHAR(25),
-    @descripcionItem VARCHAR(25),
-    @importeItem DECIMAL(10, 2)
-AS
-BEGIN
-    SET NOCOUNT ON;
-    BEGIN TRY
-        IF @importeItem <= 0
-        BEGIN
-            ;THROW 50001, 'El importe del ítem debe ser un valor positivo.', 1;
-        END
-
-        IF NOT EXISTS (SELECT 1 FROM pagos.facturaEmitida WHERE idFactura = @idFactura)
-        BEGIN
-            ;THROW 50002, 'La factura padre con idFactura especificado no existe.', 1;
-        END
-
-        IF EXISTS (SELECT 1 FROM pagos.cuerpoFactura WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura)
-        BEGIN
-            ;THROW 50003, 'Ya existe un ítem de factura con el mismo idFactura y idItemFactura.', 1;
-        END
-
-        BEGIN TRANSACTION;
-        INSERT INTO pagos.cuerpoFactura (idFactura, idItemFactura, tipoItem, descripcionItem, importeItem)
-        VALUES (@idFactura, @idItemFactura, @tipoItem, @descripcionItem, @importeItem);
-        COMMIT TRANSACTION;
-        PRINT 'Ítem de factura insertado exitosamente.';
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-    END CATCH;
-END;
-GO
-
--- ------------------------------------------------------------------------------
--- PROCEDIMIENTO: modificarCuerpoFactura
--- ------------------------------------------------------------------------------
-CREATE OR ALTER PROCEDURE pagos.modificarCuerpoFactura
-    @idFactura INT,
-    @idItemFactura INT,
-    @nuevoTipoItem VARCHAR(25),
-    @nuevaDescripcionItem VARCHAR(25),
-    @nuevoImporteItem DECIMAL(10, 2)
-AS
-BEGIN
-    SET NOCOUNT ON;
-    BEGIN TRY
-        IF @nuevoImporteItem <= 0
-        BEGIN
-            ;THROW 50004, 'El nuevo importe del ítem debe ser un valor positivo.', 1;
-        END
-
-        BEGIN TRANSACTION;
-        UPDATE pagos.cuerpoFactura
-        SET
-            tipoItem = @nuevoTipoItem,
-            descripcionItem = @nuevaDescripcionItem,
-            importeItem = @nuevoImporteItem
-        WHERE
-            idFactura = @idFactura AND idItemFactura = @idItemFactura;
-
-        -- Verificar si se actualizó alguna fila
-        IF @@ROWCOUNT = 0
-        BEGIN
-            ROLLBACK TRANSACTION;
-            ;THROW 50005, 'No se encontró el ítem de factura con el idFactura y idItemFactura especificados para actualizar.', 1;
-        END
-        COMMIT TRANSACTION;
-        PRINT 'Ítem de factura actualizado exitosamente.';
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-    END CATCH;
-END;
-GO
-
--- ------------------------------------------------------------------------------
--- PROCEDIMIENTO: eliminarCuerpoFactura
--- ------------------------------------------------------------------------------
-CREATE OR ALTER PROCEDURE pagos.eliminarCuerpoFactura
-    @idFactura INT,
-    @idItemFactura INT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    BEGIN TRY
-        BEGIN TRANSACTION;
-        DELETE FROM pagos.cuerpoFactura
-        WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
-        -- Verificar si se eliminó alguna fila
-        IF @@ROWCOUNT = 0
-        BEGIN
-            ROLLBACK TRANSACTION;
-            ;THROW 50006, 'No se encontró el ítem de factura con el idFactura y idItemFactura especificados para eliminar.', 1;
-        END
-        COMMIT TRANSACTION;
-        PRINT 'Ítem de factura eliminado exitosamente.'
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-    END CATCH;
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
 END;
 GO
 
