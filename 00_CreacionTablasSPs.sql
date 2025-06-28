@@ -136,7 +136,6 @@ CREATE TABLE socios.ingresoSocio (
 );
 GO
 
-
 -- 2. Tablas que dependen de las tablas base
 
 -- 2.1 socios.socio
@@ -171,6 +170,15 @@ CREATE TABLE estadoMembresiaSocio (
 	fechaVencimientoMembresia DATE,
 	FOREIGN KEY (idSocio) REFERENCES socios.ingresoSocio(idSocio)
 )
+
+-- 2.3 socios.saldoAFavorSocio
+CREATE TABLE socios.saldoAFavorSocio (
+	idSocio INT,
+	saldoTotal DECIMAL(10,2)
+	CONSTRAINT PK_saldo PRIMARY KEY (idSocio),
+	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
+);
+
 
 -- 3. Tablas con dependencias de segundo nivel
 
@@ -1397,78 +1405,78 @@ GO
 --actividadPileta
 
 CREATE OR ALTER PROCEDURE actividades.insertarActividadPileta
-  @tarifaSocioPorDia     DECIMAL(10, 2),
-  @tarifaInvitadoPorDia  DECIMAL(10, 2),
-  @horaAperturaActividad INT,
-  @horaCierreActividad   INT
+  @tarifaSocioPorDia        DECIMAL(10, 2),
+  @tarifaSocioPorMes        DECIMAL(10, 2),
+  @tarifaSocioPorTemporada  DECIMAL(10, 2),
+  @tarifaInvitadoPorDia     DECIMAL(10, 2),
+  @tarifaInvitadoPorMes     DECIMAL(10, 2),
+  @tarifaInvitadoPorTemporada DECIMAL(10, 2),
+  @horaAperturaActividad    DATE,
+  @horaCierreActividad      DATE
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF @tarifaSocioPorDia <= 0 OR @tarifaInvitadoPorDia <= 0
+  IF @horaCierreActividad <= @horaAperturaActividad
   BEGIN
-    RAISERROR('Las tarifas deben ser mayores a cero.', 16, 1);
-    RETURN;
-  END
-
-  IF @horaAperturaActividad < 0 OR @horaAperturaActividad > 23
-     OR @horaCierreActividad < 0 OR @horaCierreActividad > 23
-     OR @horaCierreActividad <= @horaAperturaActividad
-  BEGIN
-    RAISERROR('Los horarios deben estar entre 0 y 23, y la hora de cierre debe ser mayor a la de apertura.', 16, 1);
+    RAISERROR('La hora de cierre debe ser posterior a la de apertura.', 16, 1);
     RETURN;
   END
 
   INSERT INTO actividades.actividadPileta (
-    tarifaSocioPorDia, tarifaInvitadoPorDia,
+    tarifaSocioPorDia, tarifaSocioPorMes, tarifaSocioPorTemporada,
+    tarifaInvitadoPorDia, tarifaInvitadoPorMes, tarifaInvitadoPorTemporada,
     horaAperturaActividad, horaCierreActividad
   )
   VALUES (
-    @tarifaSocioPorDia, @tarifaInvitadoPorDia,
+    @tarifaSocioPorDia, @tarifaSocioPorMes, @tarifaSocioPorTemporada,
+    @tarifaInvitadoPorDia, @tarifaInvitadoPorMes, @tarifaInvitadoPorTemporada,
     @horaAperturaActividad, @horaCierreActividad
   );
-END
+END;
 GO
 
+
 CREATE OR ALTER PROCEDURE actividades.actualizarActividadPileta
-  @idActividad            INT,
-  @tarifaSocioPorDia     DECIMAL(10, 2),
-  @tarifaInvitadoPorDia  DECIMAL(10, 2),
-  @horaAperturaActividad INT,
-  @horaCierreActividad   INT
+  @idActividad              INT,
+  @tarifaSocioPorDia        DECIMAL(10, 2),
+  @tarifaSocioPorMes        DECIMAL(10, 2),
+  @tarifaSocioPorTemporada  DECIMAL(10, 2),
+  @tarifaInvitadoPorDia     DECIMAL(10, 2),
+  @tarifaInvitadoPorMes     DECIMAL(10, 2),
+  @tarifaInvitadoPorTemporada DECIMAL(10, 2),
+  @horaAperturaActividad    DATE,
+  @horaCierreActividad      DATE
 AS
 BEGIN
   SET NOCOUNT ON;
 
   IF NOT EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad)
   BEGIN
-    RAISERROR('No existe una actividad con el ID especificado.', 16, 1);
+    RAISERROR('La actividad de pileta con ID %d no existe.', 16, 1, @idActividad);
     RETURN;
   END
 
-  IF @tarifaSocioPorDia <= 0 OR @tarifaInvitadoPorDia <= 0
+  IF @horaCierreActividad <= @horaAperturaActividad
   BEGIN
-    RAISERROR('Las tarifas deben ser mayores a cero.', 16, 1);
-    RETURN;
-  END
-
-  IF @horaAperturaActividad < 0 OR @horaAperturaActividad > 23
-     OR @horaCierreActividad < 0 OR @horaCierreActividad > 23
-     OR @horaCierreActividad <= @horaAperturaActividad
-  BEGIN
-    RAISERROR('Los horarios deben estar entre 0 y 23, y la hora de cierre debe ser mayor a la de apertura.', 16, 1);
+    RAISERROR('La hora de cierre debe ser posterior a la de apertura.', 16, 1);
     RETURN;
   END
 
   UPDATE actividades.actividadPileta
   SET
-    tarifaSocioPorDia = @tarifaSocioPorDia,
-    tarifaInvitadoPorDia = @tarifaInvitadoPorDia,
-    horaAperturaActividad = @horaAperturaActividad,
-    horaCierreActividad = @horaCierreActividad
+    tarifaSocioPorDia        = @tarifaSocioPorDia,
+    tarifaSocioPorMes        = @tarifaSocioPorMes,
+    tarifaSocioPorTemporada  = @tarifaSocioPorTemporada,
+    tarifaInvitadoPorDia     = @tarifaInvitadoPorDia,
+    tarifaInvitadoPorMes     = @tarifaInvitadoPorMes,
+    tarifaInvitadoPorTemporada = @tarifaInvitadoPorTemporada,
+    horaAperturaActividad    = @horaAperturaActividad,
+    horaCierreActividad      = @horaCierreActividad
   WHERE idActividad = @idActividad;
-END
+END;
 GO
+
 
 CREATE OR ALTER PROCEDURE actividades.eliminarActividadPileta
   @idActividad INT
@@ -1478,14 +1486,15 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad)
   BEGIN
-    RAISERROR('No existe una actividad con el ID especificado.', 16, 1);
+    RAISERROR('La actividad de pileta con ID %d no existe.', 16, 1, @idActividad);
     RETURN;
   END
 
   DELETE FROM actividades.actividadPileta
   WHERE idActividad = @idActividad;
-END
+END;
 GO
+
 
 -- :::::::::::::::::::::::::::::::::::::::::::: ACTIVIDADES ::::::::::::::::::::::::::::::::::::::::::::
 
