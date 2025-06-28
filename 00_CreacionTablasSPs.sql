@@ -131,7 +131,7 @@ CREATE TABLE socios.ingresoSocio (
 	idSocio INT PRIMARY KEY IDENTITY (1,1),
 	fechaIngreso DATE,
 	primerUsuario VARCHAR(50),
-	primerContraseña VARCHAR(10) UNIQUE,
+	primerContrasenia VARCHAR(10) UNIQUE,
 	tipoCategoriaSocio VARCHAR(15)
 );
 GO
@@ -156,17 +156,17 @@ CREATE TABLE socios.socio (
     -- saldoAFavor DECIMAL(10, 2) CHECK (saldoAFavor >= 0), GENERAR UNA ENTIDAD DE ESTO
     direccion VARCHAR(25),
 	CONSTRAINT PK_socio PRIMARY KEY (idSocio),
-	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaSocio(idCategoria),
+	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaMembresiaSocio(idCategoria),
 	FOREIGN KEY (idSocio) REFERENCES socios.ingresoSocio(idSocio)
 );
 GO
 
 -- 2.2 socios.estadoMembresiaSocio
 
-CREATE TABLE estadoMembresiaSocio (
+CREATE TABLE socios.estadoMembresiaSocio (
 	idSocio INT PRIMARY KEY IDENTITY (1,1),
-	tipoCategoriaSocio VARCHAR(15),
-	estadoMembresia VARCHAR(22) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
+	tipoCategoriaSocio VARCHAR(15) CHECK (tipoCategoriaSocio in('Cadete', 'Mayor', 'Menor')),
+	estadoMorosidadMembresia VARCHAR(22) NOT NULL CHECK (estadoMorosidadMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
 	fechaVencimientoMembresia DATE,
 	FOREIGN KEY (idSocio) REFERENCES socios.ingresoSocio(idSocio)
 )
@@ -241,7 +241,7 @@ CREATE TABLE pagos.facturaActiva (
 	fechaPrimerVencimiento DATE,
 	fechaSegundoVencimiento DATE,
 	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
-	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaSocio(idCategoria)
+	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaMembresiaSocio(idCategoria)
 )
 
 -- 3.5 pagos.facturaEmitida
@@ -255,7 +255,8 @@ CREATE TABLE pagos.facturaEmitida (
 	modalidadCobro VARCHAR(25) NOT NULL,
 	importeBruto DECIMAL(10, 2) NOT NULL CHECK (importeBruto >= 0),
 	importeTotal DECIMAL(10, 2) NOT NULL CHECK (importeTotal >= 0),
-	CONSTRAINT PK_facturaEmitida PRIMARY KEY (idFactura)
+	CONSTRAINT PK_facturaEmitida PRIMARY KEY (idFactura),
+	FOREIGN KEY (idFactura) REFERENCES pagos.facturaActiva(idFactura)
 );
 GO
 
@@ -379,18 +380,6 @@ CREATE TABLE pagos.reembolso (
 );
 GO
 
--- 3.13 pagos.cuerpoFactura
-CREATE TABLE pagos.cuerpoFactura (
-	idFactura INT NOT NULL,
-	idItemFactura INT NOT NULL,
-	tipoItem VARCHAR(25) NOT NULL,
-	descripcionItem VARCHAR(25) NOT NULL,
-	importeItem DECIMAL(10, 2) CHECK (importeItem > 0) NOT NULL,
-	CONSTRAINT PK_cuerpoFactura PRIMARY KEY (idFactura, idItemFactura),
-	FOREIGN KEY (idFactura) REFERENCES pagos.facturaEmitida(idFactura)
-);
-GO
-
 -- 3.14 actividades.presentismoActividadSocio
 CREATE TABLE actividades.presentismoActividadSocio (
     idSocio INT NOT NULL,
@@ -405,7 +394,6 @@ CREATE TABLE actividades.presentismoActividadSocio (
 GO
 
 -- :::::::::::::::::::::::::::::::::::::::::::: FUNCIONES Y STORED PROCEDURES ::::::::::::::::::::::::::::::::::::::::::::
-
 CREATE OR ALTER FUNCTION socios.validarCUIL(@cuil VARCHAR(13))
 RETURNS BIT
 AS
@@ -459,231 +447,343 @@ GO
 
 --SPs
 
-CREATE OR ALTER PROCEDURE socios.insertarCategoriaSocio
-    @tipo VARCHAR(15),
-    @costoMembresia DECIMAL(10,2)
+-- 1.1 categoriaMembresiaSocio
+
+CREATE OR ALTER PROCEDURE socios.insertarCategoriaMembresiaSocio
+  @tipo            VARCHAR(15),
+  @costoMembresia  DECIMAL(10,2)
 AS
 BEGIN
-    SET NOCOUNT ON;
-	--Verificación de tipo (cuánto menos, que no quede vacío):
-    IF @tipo = ''
-    BEGIN
-        RAISERROR('El tipo no puede quedar vacío.', 16, 1);
-        RETURN;
-    END
+  SET NOCOUNT ON;
 
-    INSERT INTO socios.categoriaSocio (tipo, costoMembresia)
-    VALUES (@tipo, @costoMembresia);
-END
+  -- Validaciones
+  IF LTRIM(RTRIM(@tipo)) = ''
+    THROW 50001, 'El tipo no puede quedar vacío.', 1;
+  IF @costoMembresia <= 0
+    THROW 50002, 'El costo de membresía debe ser mayor a cero.', 1;
+
+  INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia)
+  VALUES (@tipo, @costoMembresia);
+END;
 GO
 
-CREATE OR ALTER PROCEDURE socios.actualizarCategoriaSocio
-    @idCategoria INT,
-    @tipo VARCHAR(15),
-    @costoMembresia DECIMAL(10,2)
+CREATE OR ALTER PROCEDURE socios.actualizarCategoriaMembresiaSocio
+  @idCategoria     INT,
+  @tipo            VARCHAR(15),
+  @costoMembresia  DECIMAL(10,2)
 AS
 BEGIN
-    SET NOCOUNT ON;
+  SET NOCOUNT ON;
 
-    -- Verificar existencia
-    IF NOT EXISTS (SELECT 1 FROM socios.categoriaSocio WHERE idCategoria = @idCategoria)
-    BEGIN
-        RAISERROR('Categoría con ID %d no encontrada.', 16, 1, @idCategoria);
-        RETURN;
-    END
+  -- Verificar existencia y estado activo
+  IF NOT EXISTS (
+    SELECT 1 FROM socios.categoriaMembresiaSocio
+    WHERE idCategoria = @idCategoria
+      AND estadoCategoriaSocio = 1
+  )
+    THROW 50003, 'Categoría no encontrada o inactiva.', 1;
 
-    UPDATE socios.categoriaSocio
-    SET
-        tipo = @tipo,
-        costoMembresia = @costoMembresia
-    WHERE idCategoria = @idCategoria;
-END
+  -- Validaciones
+  IF LTRIM(RTRIM(@tipo)) = ''
+    THROW 50004, 'El tipo no puede quedar vacío.', 1;
+  IF @costoMembresia <= 0
+    THROW 50005, 'El costo de membresía debe ser mayor a cero.', 1;
+
+  UPDATE socios.categoriaMembresiaSocio
+  SET
+    tipo = @tipo,
+    costoMembresia = @costoMembresia
+  WHERE idCategoria = @idCategoria;
+END;
 GO
 
-CREATE OR ALTER PROCEDURE socios.sp_EliminarCategoriaSocio
-    @idCategoria INT
+CREATE OR ALTER PROCEDURE socios.eliminarCategoriaMembresiaSocio
+  @idCategoria INT
 AS
 BEGIN
-    SET NOCOUNT ON;
+  SET NOCOUNT ON;
 
-    -- Verificar existencia
-    IF NOT EXISTS (SELECT 1 FROM socios.categoriaSocio WHERE idCategoria = @idCategoria)
-    BEGIN
-        RAISERROR('Categoría con ID %d no encontrada.', 16, 1, @idCategoria);
-        RETURN;
-    END
+  -- Verificar existencia y estado activo
+  IF NOT EXISTS (
+    SELECT 1 FROM socios.categoriaMembresiaSocio
+    WHERE idCategoria = @idCategoria
+      AND estadoCategoriaSocio = 1
+  )
+    THROW 50006, 'Categoría no encontrada o ya inactiva.', 1;
 
-    UPDATE socios.categoriaSocio
-    SET estadoCategoriaSocio = 0
-    WHERE idCategoria = @idCategoria;
-END
+  -- Marcamos como inactiva
+  UPDATE socios.categoriaMembresiaSocio
+  SET estadoCategoriaSocio = 0
+  WHERE idCategoria = @idCategoria;
+END;
 GO
 
 --socio
 
-CREATE OR ALTER PROCEDURE socios.insertarSocio
-  @categoriaSocio             INT,
-  @dni                        VARCHAR(10),
-  @cuil                       VARCHAR(13),
-  @nombre                     VARCHAR(10),
-  @apellido                   VARCHAR(10),
-  @email                      VARCHAR(25)    = NULL,
-  @telefono                   VARCHAR(14)    = NULL,
-  @fechaNacimiento            DATE           = NULL,
-  @contactoDeEmergencia       VARCHAR(14)    = NULL,
-  @usuario                    VARCHAR(50),
-  @contrasenia                VARCHAR(10),
-  @direccion                  VARCHAR(25)    = NULL,
-  @saldoAFavor                DECIMAL(10,2)  = 0
+
+CREATE OR ALTER PROCEDURE socios.registrarNuevoSocio
+  @fechaIngreso           DATE,
+  @primerUsuario          VARCHAR(50),
+  @primerContrasenia      VARCHAR(10),
+  @tipoCategoriaSocio     VARCHAR(15),  -- debe coincidir con categoriaMembresiaSocio.tipo
+  @dni                    VARCHAR(10),
+  @cuil                   VARCHAR(13),
+  @nombre                 VARCHAR(10),
+  @apellido               VARCHAR(10),
+  @email                  VARCHAR(25)    = NULL,
+  @telefono               VARCHAR(14)    = NULL,
+  @fechaNacimiento        DATE           = NULL,
+  @contactoEmergencia     VARCHAR(14)    = NULL,
+  @direccion              VARCHAR(25)    = NULL,
+  @newIdSocio             INT            OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
-  IF socios.validarDNI(@dni) = 0
-  BEGIN
-    RAISERROR('DNI inválido.',16,1);
-    RETURN;
-  END
-  IF socios.validarCUIL(@cuil) = 0
-  BEGIN
-    RAISERROR('CUIL inválido.',16,1);
-    RETURN;
-  END
-  IF NOT EXISTS (SELECT 1 FROM socios.categoriaSocio WHERE idCategoria = @categoriaSocio AND estadoCategoriaSocio = 1)
-  BEGIN
-    RAISERROR('Categoría de socio %d no existe o está inactiva.',16,1,@categoriaSocio);
-    RETURN;
-  END
-  INSERT INTO socios.socio (
-    categoriaSocio,
-    dni,
-    cuil,
-    nombre,
-    apellido,
-    email,
-    telefono,
-    fechaNacimiento,
-    fechaDeVigenciaContrasenia,
-    contactoDeEmergencia,
-    usuario,
-    contrasenia,
-    estadoMembresia,
-    fechaIngresoSocio,
-    fechaVencimientoMembresia,
-    saldoAFavor,
-    direccion
-  )
-  VALUES (
-    @categoriaSocio,
-    @dni,
-    @cuil,
-    @nombre,
-    @apellido,
-    @email,
-    @telefono,
-    @fechaNacimiento,
-    DATEADD(MONTH,3,GETDATE()),       -- +3 meses
-    @contactoDeEmergencia,
-    @usuario,
-    @contrasenia,
-    'Activo',                          -- estado inicial
-    GETDATE(),                         -- fecha de ingreso = hoy
-    DATEADD(MONTH,1,GETDATE()),       -- +1 mes
-    @saldoAFavor,
-    @direccion
-  );
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- 1) Validar DNI y CUIL
+    IF socios.validarDNI(@dni) = 0
+      THROW 50010, 'DNI inválido.', 1;
+    IF socios.validarCUIL(@cuil) = 0
+      THROW 50011, 'CUIL inválido.', 1;
+
+    -- 2) Verificar unicidad de la contraseña inicial
+    IF EXISTS (SELECT 1 FROM socios.ingresoSocio WHERE primerContrasenia = @primerContrasenia)
+      THROW 50012, 'La contraseña inicial ya existe.', 1;
+
+    -- 3) Insertar en ingresoSocio
+    INSERT INTO socios.ingresoSocio (
+      fechaIngreso,
+      primerUsuario,
+      primerContrasenia,
+      tipoCategoriaSocio
+    ) VALUES (
+      @fechaIngreso,
+      @primerUsuario,
+      @primerContrasenia,
+      @tipoCategoriaSocio
+    );
+    SET @newIdSocio = SCOPE_IDENTITY();
+
+    -- 4) Resolver el idCategoriaSocio de la tabla categoriaMembresiaSocio
+    DECLARE @categoriaSocioId INT;
+    SELECT @categoriaSocioId = idCategoria
+      FROM socios.categoriaMembresiaSocio
+     WHERE tipo = @tipoCategoriaSocio;
+    IF @categoriaSocioId IS NULL
+      THROW 50013, 'Categoría de socio no encontrada.', 1;
+
+    -- 5) Insertar en socio
+    INSERT INTO socios.socio (
+      idSocio,
+      categoriaSocio,
+      dni,
+      cuil,
+      nombre,
+      apellido,
+      email,
+      telefono,
+      fechaNacimiento,
+      fechaDeVigenciaContrasenia,
+      contactoDeEmergencia,
+      usuario,
+      contrasenia,
+      direccion
+    ) VALUES (
+      @newIdSocio,
+      @categoriaSocioId,
+      @dni,
+      @cuil,
+      @nombre,
+      @apellido,
+      @email,
+      @telefono,
+      @fechaNacimiento,
+      DATEADD(MONTH, 3, GETDATE()),
+      @contactoEmergencia,
+      @primerUsuario,
+      @primerContrasenia,
+      @direccion
+    );
+
+    -- 6) Insertar en estadoMembresiaSocio (forzamos IDENTITY para que coincida)
+    SET IDENTITY_INSERT socios.estadoMembresiaSocio ON;
+    INSERT INTO socios.estadoMembresiaSocio (
+      idSocio,
+      tipoCategoriaSocio,
+      estadoMorosidadMembresia,
+      fechaVencimientoMembresia
+    ) VALUES (
+      @newIdSocio,
+      @tipoCategoriaSocio,
+      'Activo',
+      DATEADD(MONTH, 1, GETDATE())
+    );
+    SET IDENTITY_INSERT socios.estadoMembresiaSocio OFF;
+
+    COMMIT TRANSACTION;
+    PRINT 'Socio registrado con éxito. ID = ' + CAST(@newIdSocio AS VARCHAR(10));
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
 END
 GO
 
-CREATE PROCEDURE socios.actualizarSocio
-  @idSocio                    INT,
-  @categoriaSocio             INT,
-  @dni                        VARCHAR(10)           = NULL,
-  @cuil                       VARCHAR(13)           = NULL,
-  @nombre                     VARCHAR(10)      = NULL,
-  @apellido                   VARCHAR(10)      = NULL,
-  @email                      VARCHAR(25)      = NULL,
-  @telefono                   VARCHAR(14)      = NULL,
-  @fechaNacimiento            DATE             = NULL,
-  @contraseniaNueva           VARCHAR(10)      = NULL,
-  @contactoDeEmergencia       VARCHAR(14)      = NULL,
-  @estadoMembresia            VARCHAR(22)      = NULL,
-  @fechaVencimientoMembresia  DATE             = NULL,
-  @saldoAFavor                DECIMAL(10,2)    = NULL,
-  @direccion                  VARCHAR(25)      = NULL
+/*IF NOT EXISTS (SELECT 1 FROM socios.categoriaMembresiaSocio WHERE tipo = 'Cadete')
+BEGIN
+  INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia)
+  VALUES ('Cadete', 100.00);
+END
+
+select * from socios.categoriaMembresiaSocio
+
+PRINT '--- Caso 1: Registro válido ---';
+DECLARE @newId1 INT;
+BEGIN TRY
+    EXEC socios.registrarNuevoSocio
+      @fechaIngreso          = '2025-06-28',
+      @primerUsuario         = 'usuario5',
+      @primerContrasenia     = 'clave122',
+      @tipoCategoriaSocio    = 'Cadete',
+      @dni                   = '12345678',
+      @cuil                  = '20‑12345678‑6',
+      @nombre                = 'Juan',
+      @apellido              = 'Perez',
+      @email                 = 'juan.perez@example.com',
+      @telefono              = '3412345678',
+      @fechaNacimiento       = '1990-01-01',
+      @contactoEmergencia    = '3411122233',
+      @direccion             = 'Calle Falsa 123',
+      @newIdSocio            = @newId1 OUTPUT;
+    PRINT '>> OK: idSocio = ' + CAST(@newId1 AS VARCHAR(10));
+END TRY
+BEGIN CATCH
+    PRINT 'ERROR: ' + ERROR_MESSAGE();
+END CATCH;
+select * from socios.ingresoSocio
+
+PRINT '--- Caso 2: DNI inválido ---';
+BEGIN TRY
+    DECLARE @newId2 INT;
+    EXEC socios.registrarNuevoSocio
+      @fechaIngreso          = '2025-06-28',
+      @primerUsuario         = 'usuario2',
+      @primerContrasenia     = 'clave234',
+      @tipoCategoriaSocio    = 'Cadete',
+      @dni                   = '1234',            -- inválido
+      @cuil                  = '20-87654321-7',
+      @nombre                = 'Ana',
+      @apellido              = 'Gomez',
+      @newIdSocio            = @newId2 OUTPUT;
+END TRY
+BEGIN CATCH
+    PRINT 'ERROR: ' + ERROR_MESSAGE();
+END CATCH;
+
+GO
+
+PRINT '--- Caso 3: CUIL inválido ---';
+BEGIN TRY
+    DECLARE @newId3 INT;
+    EXEC socios.registrarNuevoSocio
+      @fechaIngreso          = '2025-06-28',
+      @primerUsuario         = 'usuario6',
+      @primerContrasenia     = 'clave355',
+      @tipoCategoriaSocio    = 'Cadete',
+      @dni                   = '87654321',
+      @cuil                  = '20-87654321-0',  -- checksum erróneo
+      @nombre                = 'Luis',
+      @apellido              = 'Lopez',
+      @newIdSocio            = @newId3 OUTPUT;
+END TRY
+BEGIN CATCH
+    PRINT 'ERROR: ' + ERROR_MESSAGE();
+END CATCH;
+
+GO*/
+
+CREATE OR ALTER PROCEDURE socios.actualizarSocio
+  @idSocio                  INT,
+  @categoriaSocio           INT            = NULL,
+  @dni                      VARCHAR(10)    = NULL,
+  @cuil                     VARCHAR(13)    = NULL,
+  @nombre                   VARCHAR(10)    = NULL,
+  @apellido                 VARCHAR(10)    = NULL,
+  @email                    VARCHAR(25)    = NULL,
+  @telefono                 VARCHAR(14)    = NULL,
+  @fechaNacimiento          DATE           = NULL,
+  @contactoDeEmergencia     VARCHAR(14)    = NULL,
+  @usuario                  VARCHAR(50)    = NULL,
+  @contraseniaNueva         VARCHAR(10)    = NULL,
+  @direccion                VARCHAR(25)    = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- 1) Verificar existencia
-  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio AND categoriaSocio = @categoriaSocio)
-  BEGIN
-    RAISERROR('Socio %d en categoría %d no encontrado.',16,1,@idSocio,@categoriaSocio);
-    RETURN;
-  END
+  -- 1. Verificar existencia
+  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+    THROW 50011, 'Socio no encontrado.', 1;
 
-  -- 2) Validaciones puntuales
+  -- 2. Validaciones puntuales
+  IF @categoriaSocio IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM socios.categoriaMembresiaSocio 
+                    WHERE idCategoria = @categoriaSocio 
+                      AND estadoCategoriaSocio = 1)
+      THROW 50012, 'Categoría no existe o está inactiva.', 1;
   IF @dni IS NOT NULL AND socios.validarDNI(@dni) = 0
-  BEGIN
-    RAISERROR('DNI inválido.',16,1);
-    RETURN;
-  END
+    THROW 50013, 'DNI inválido.', 1;
   IF @cuil IS NOT NULL AND socios.validarCUIL(@cuil) = 0
-  BEGIN
-    RAISERROR('CUIL inválido.',16,1);
-    RETURN;
-  END
+    THROW 50014, 'CUIL inválido.', 1;
+  IF @usuario IS NOT NULL
+    AND EXISTS (SELECT 1 FROM socios.socio WHERE usuario = @usuario AND idSocio <> @idSocio)
+      THROW 50015, 'El usuario ya está en uso.', 1;
 
-  -- 3) Armado dinámico del UPDATE
+  -- 3. Aplicar UPDATE
   UPDATE socios.socio
   SET
-    dni                       = COALESCE(@dni, dni),
-    cuil                      = COALESCE(@cuil, cuil),
-    nombre                    = COALESCE(@nombre, nombre),
-    apellido                  = COALESCE(@apellido, apellido),
-    email                     = COALESCE(@email, email),
-    telefono                  = COALESCE(@telefono, telefono),
-    fechaNacimiento           = COALESCE(@fechaNacimiento, fechaNacimiento),
-    contactoDeEmergencia      = COALESCE(@contactoDeEmergencia, contactoDeEmergencia),
-    usuario                   = COALESCE(usuario, usuario),
-    -- Si la contraseña cambia, actualizo su vigencia:
-    contrasenia               = CASE WHEN @contraseniaNueva IS NOT NULL THEN @contraseniaNueva ELSE contrasenia END,
-    fechaDeVigenciaContrasenia= CASE 
-                                   WHEN @contraseniaNueva IS NOT NULL 
-                                   THEN DATEADD(MONTH,3,GETDATE()) 
-                                   ELSE fechaDeVigenciaContrasenia 
-                                 END,
-    -- Opciones de membresía (si se pasó parámetro):
-    estadoMembresia           = COALESCE(@estadoMembresia, estadoMembresia),
-    fechaVencimientoMembresia = COALESCE(@fechaVencimientoMembresia, fechaVencimientoMembresia),
-    saldoAFavor               = COALESCE(@saldoAFavor, saldoAFavor),
-    direccion                 = COALESCE(@direccion, direccion)
-  WHERE idSocio = @idSocio
-    AND categoriaSocio = @categoriaSocio;
-END
+    categoriaSocio           = COALESCE(@categoriaSocio, categoriaSocio),
+    dni                      = COALESCE(@dni, dni),
+    cuil                     = COALESCE(@cuil, cuil),
+    nombre                   = COALESCE(@nombre, nombre),
+    apellido                 = COALESCE(@apellido, apellido),
+    email                    = COALESCE(@email, email),
+    telefono                 = COALESCE(@telefono, telefono),
+    fechaNacimiento          = COALESCE(@fechaNacimiento, fechaNacimiento),
+    contactoDeEmergencia     = COALESCE(@contactoDeEmergencia, contactoDeEmergencia),
+    usuario                  = COALESCE(@usuario, usuario),
+    contrasenia              = CASE 
+                                 WHEN @contraseniaNueva IS NOT NULL 
+                                 THEN @contraseniaNueva 
+                                 ELSE contrasenia 
+                               END,
+    fechaDeVigenciaContrasenia = CASE 
+                                 WHEN @contraseniaNueva IS NOT NULL 
+                                 THEN DATEADD(MONTH,3,GETDATE()) 
+                                 ELSE fechaDeVigenciaContrasenia 
+                               END,
+    direccion                = COALESCE(@direccion, direccion)
+  WHERE idSocio = @idSocio;
+END;
 GO
 
-CREATE PROCEDURE socios.eliminarSocioLogico
-  @idSocio       INT,
-  @categoriaSocio INT
+CREATE OR ALTER PROCEDURE socios.eliminarSocioLogico
+  @idSocio INT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- Verificar existencia
-  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio AND categoriaSocio = @categoriaSocio)
-  BEGIN
-    RAISERROR('Socio %d en categoría %d no encontrado.',16,1,@idSocio,@categoriaSocio);
-    RETURN;
-  END
+  -- 1. Verificar existencia en estadoMembresiaSocio
+  IF NOT EXISTS (SELECT 1 FROM socios.estadoMembresiaSocio WHERE idSocio = @idSocio)
+    THROW 50021, 'No existe registro de estado de membresía para ese socio.', 1;
 
-  -- Cambio de estado a “Inactivo”
-  UPDATE socios.socio
-  SET estadoMembresia = 'Inactivo'
-  WHERE idSocio = @idSocio
-    AND categoriaSocio = @categoriaSocio;
-END
+  -- 2. Marcar como Inactivo
+  UPDATE socios.estadoMembresiaSocio
+  SET estadoMorosidadMembresia = 'Inactivo'
+  WHERE idSocio = @idSocio;
+END;
 GO
-
 --rolDisponible
 
 CREATE OR ALTER PROCEDURE socios.insertarRolDisponible
@@ -761,202 +861,148 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE socios.insertarSaldoSocio
+  @idSocio INT,
+  @saldoInicial DECIMAL(10,2)
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  -- Validar existencia del socio
+  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+    THROW 51001, 'El socio especificado no existe.', 1;
+
+  -- Validar que no exista ya saldo
+  IF EXISTS (SELECT 1 FROM socios.saldoAFavorSocio WHERE idSocio = @idSocio)
+    THROW 51002, 'Ya existe un saldo registrado para este socio.', 1;
+
+  IF @saldoInicial < 0
+    THROW 51003, 'El saldo inicial no puede ser negativo.', 1;
+
+  -- Insertar
+  INSERT INTO socios.saldoAFavorSocio (idSocio, saldoTotal)
+  VALUES (@idSocio, @saldoInicial);
+END;
+GO
+
+
+CREATE OR ALTER PROCEDURE socios.actualizarSaldoSocio
+  @idSocio INT,
+  @montoAjuste DECIMAL(10,2) -- Puede ser positivo (suma) o negativo (resta)
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  -- Validar existencia
+  IF NOT EXISTS (SELECT 1 FROM socios.saldoAFavorSocio WHERE idSocio = @idSocio)
+    THROW 51010, 'El socio no tiene saldo registrado.', 1;
+
+  -- Validar que el saldo resultante no sea negativo
+  DECLARE @saldoActual DECIMAL(10,2);
+  SELECT @saldoActual = saldoTotal FROM socios.saldoAFavorSocio WHERE idSocio = @idSocio;
+
+  IF @saldoActual + @montoAjuste < 0
+    THROW 51011, 'El ajuste dejaría el saldo en negativo.', 1;
+
+  -- Actualizar
+  UPDATE socios.saldoAFavorSocio
+  SET saldoTotal = saldoTotal + @montoAjuste
+  WHERE idSocio = @idSocio;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE socios.eliminarSaldoSocioLogico
+  @idSocio INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF NOT EXISTS (SELECT 1 FROM socios.saldoAFavorSocio WHERE idSocio = @idSocio)
+    THROW 51020, 'El socio no tiene saldo registrado.', 1;
+
+  -- Poner en cero
+  UPDATE socios.saldoAFavorSocio
+  SET saldoTotal = 0
+  WHERE idSocio = @idSocio;
+END;
+GO
+
 --rolVigente
 
-CREATE PROCEDURE socios.insertarRolVigente
-  @usuario         VARCHAR(50),
-  @descripcionRol  VARCHAR(50)
+CREATE OR ALTER PROCEDURE socios.insertarRolVigente
+  @idRol INT,
+  @idSocio INT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  DECLARE @idSocio INT,
-          @idRol   INT;
-
-  -- 1) Obtener el socio activo por usuario
-  SELECT @idSocio = idSocio
-  FROM socios.socio
-  WHERE usuario = @usuario
-    AND estadoMembresia = 'Activo';
-
-  IF @idSocio IS NULL
+  IF NOT EXISTS (SELECT 1 FROM socios.rolDisponible WHERE idRol = @idRol)
   BEGIN
-    RAISERROR('No se encontró socio activo con usuario "%s".',16,1,@usuario);
-    RETURN;
+    THROW 51001, 'El ID de rol especificado no existe.', 1;
   END
 
-  -- 2) Obtener el rol disponible por descripción
-  SELECT @idRol = idRol
-  FROM socios.rolDisponible
-  WHERE descripcion = @descripcionRol
-    AND estadoRol = 1;
-
-  IF @idRol IS NULL
+  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
   BEGIN
-    RAISERROR('No se encontró rol activo con descripción "%s".',16,1,@descripcionRol);
-    RETURN;
+    THROW 51002, 'El ID de socio especificado no existe.', 1;
   END
 
-  -- 3) Verificar que no exista ya la asignación
   IF EXISTS (
-    SELECT 1 
-    FROM socios.rolVigente
-    WHERE idSocio = @idSocio 
-      AND idRol   = @idRol
-      AND estadoRolVigente  = 1
+    SELECT 1 FROM socios.rolVigente 
+    WHERE idRol = @idRol AND idSocio = @idSocio
   )
   BEGIN
-    RAISERROR('La asignación socio="%s" (%d) -> rol="%s" (%d) ya existe.',16,1,
-               @usuario, @idSocio, @descripcionRol, @idRol);
-    RETURN;
+    THROW 51003, 'Ya existe una relación entre este rol y socio.', 1;
   END
 
-  -- 4) Insertar
-  INSERT INTO socios.rolVigente (idRol, idSocio)
-  VALUES (@idRol, @idSocio);
-END
+  INSERT INTO socios.rolVigente (idRol, idSocio, estadoRolVigente)
+  VALUES (@idRol, @idSocio, 1);
+
+  PRINT 'Rol asignado correctamente.';
+END;
 GO
 
-CREATE PROCEDURE socios.actualizarRolVigente
-  @usuarioOld        VARCHAR(50),
-  @descripcionRolOld VARCHAR(50),
-  @usuarioNew        VARCHAR(50),
-  @descripcionRolNew VARCHAR(50)
-AS
-BEGIN
-  SET NOCOUNT ON;
-  
-  DECLARE @idSocioOld INT,
-          @idRolOld   INT,
-          @idSocioNew INT,
-          @idRolNew   INT;
-
-  -- 1.1) Obtener IDs antiguos
-  SELECT @idSocioOld = idSocio
-    FROM socios.socio
-   WHERE usuario = @usuarioOld
-     AND estadoMembresia = 'Activo';
-
-  SELECT @idRolOld = idRol
-    FROM socios.rolDisponible
-   WHERE descripcion = @descripcionRolOld
-     AND estadoRol = 1;
-
-  IF @idSocioOld IS NULL
-  BEGIN
-    RAISERROR('Usuario antiguo "%s" no encontrado o inactivo.',16,1,@usuarioOld);
-    RETURN;
-  END
-  IF @idRolOld IS NULL
-  BEGIN
-    RAISERROR('Rol antiguo "%s" no encontrado o inactivo.',16,1,@descripcionRolOld);
-    RETURN;
-  END
-
-  -- 1.2) Obtener IDs nuevos
-  SELECT @idSocioNew = idSocio
-    FROM socios.socio
-   WHERE usuario = @usuarioNew
-     AND estadoMembresia = 'Activo';
-
-  SELECT @idRolNew = idRol
-    FROM socios.rolDisponible
-   WHERE descripcion = @descripcionRolNew
-     AND estadoRol = 1;
-
-  IF @idSocioNew IS NULL
-  BEGIN
-    RAISERROR('Usuario nuevo "%s" no encontrado o inactivo.',16,1,@usuarioNew);
-    RETURN;
-  END
-  IF @idRolNew IS NULL
-  BEGIN
-    RAISERROR('Rol nuevo "%s" no encontrado o inactivo.',16,1,@descripcionRolNew);
-    RETURN;
-  END
-
-  -- 1.3) Evitar que la asignación destino ya exista
-  IF EXISTS (
-    SELECT 1
-      FROM socios.rolVigente
-     WHERE idSocio = @idSocioNew
-       AND idRol   = @idRolNew
-       AND estadoRolVigente= 1
-  )
-  BEGIN
-    RAISERROR('La asignación usuario="%s"→rol="%s" ya existe.',16,1,
-               @usuarioNew, @descripcionRolNew);
-    RETURN;
-  END
-
-  -- 1.4) Actualizar la fila
-  UPDATE socios.rolVigente
-  SET idSocio = @idSocioNew,
-      idRol   = @idRolNew
-  WHERE idSocio = @idSocioOld
-    AND idRol   = @idRolOld
-    AND estadoRolVigente  = 1;
-END
-GO
-
-CREATE PROCEDURE socios.eliminarRolVigente
-  @usuario        VARCHAR(50),
-  @descripcionRol VARCHAR(50)
+CREATE OR ALTER PROCEDURE socios.actualizarEstadoRolVigente
+  @idRol INT,
+  @idSocio INT,
+  @nuevoEstado BIT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  DECLARE @idSocio INT,
-          @idRol   INT;
-
-  -- 2.1) Obtener IDs
-  SELECT @idSocio = idSocio
-    FROM socios.socio
-   WHERE usuario = @usuario
-     AND estadoMembresia = 'Activo';
-
-  SELECT @idRol = idRol
-    FROM socios.rolDisponible
-   WHERE descripcion = @descripcionRol
-     AND estadoRol = 1;
-
-  IF @idSocio IS NULL
-  BEGIN
-    RAISERROR('Usuario "%s" no encontrado o inactivo.',16,1,@usuario);
-    RETURN;
-  END
-  IF @idRol IS NULL
-  BEGIN
-    RAISERROR('Rol "%s" no encontrado o inactivo.',16,1,@descripcionRol);
-    RETURN;
-  END
-
-  -- 2.2) Verificar asignación activa existente
   IF NOT EXISTS (
-    SELECT 1
-      FROM socios.rolVigente
-     WHERE idSocio = @idSocio
-       AND idRol   = @idRol
-       AND estadoRolVigente  = 1
+    SELECT 1 FROM socios.rolVigente 
+    WHERE idRol = @idRol AND idSocio = @idSocio
   )
   BEGIN
-    RAISERROR('No existe asignación activa usuario="%s"→rol="%s".',16,1,
-               @usuario, @descripcionRol);
-    RETURN;
+    THROW 51004, 'La relación rol-socio no existe.', 1;
   END
 
-  -- 2.3) Marcar como inactiva
   UPDATE socios.rolVigente
-  SET estadoRolVigente = 0
-  WHERE idSocio = @idSocio
-    AND idRol   = @idRol
-    AND estadoRolVigente  = 1;
-END
+  SET estadoRolVigente = @nuevoEstado
+  WHERE idRol = @idRol AND idSocio = @idSocio;
+
+  PRINT 'Estado del rol actualizado correctamente.';
+END;
 GO
+
+
+CREATE OR ALTER PROCEDURE socios.obtenerRolesVigentesDeSocio
+  @idSocio INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  SELECT rv.idRol, rd.descripcion, rv.estadoRolVigente
+  FROM socios.rolVigente rv
+  JOIN socios.rolDisponible rd ON rv.idRol = rd.idRol
+  WHERE rv.idSocio = @idSocio;
+END;
+GO
+
 
 --grupoFamiliar
 
-CREATE PROCEDURE socios.insertarGrupoFamiliar
+CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliar
   @cantidadGrupoFamiliar INT
 AS
 BEGIN
@@ -1025,193 +1071,96 @@ IF OBJECT_ID('socios.sp_InsertarGrupoFamiliarActivo','P') IS NOT NULL
   DROP PROCEDURE socios.insertarGrupoFamiliarActivo;
 GO
 
-CREATE PROCEDURE socios.insertarGrupoFamiliarActivo
-  @usuario                  VARCHAR(50),
-  @idGrupoFamiliar          INT,
-  @parentescoGrupoFamiliar  VARCHAR(10)
+CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliarActivo
+  @idSocio INT,
+  @idGrupoFamiliar INT,
+  @parentescoGrupoFamiliar VARCHAR(5)
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  DECLARE @idSocio INT;
-
-  -- 1) Obtener el idSocio a partir del usuario
-  SELECT @idSocio = idSocio
-    FROM socios.socio
-   WHERE usuario = @usuario
-     AND estadoMembresia = 'Activo';
-
-  IF @idSocio IS NULL
-  BEGIN
-    RAISERROR('No se encontró socio activo con usuario "%s".',16,1,@usuario);
-    RETURN;
-  END
-
-  -- 2) Verificar que el grupo familiar exista
   IF NOT EXISTS (
-    SELECT 1
-      FROM socios.grupoFamiliar
-     WHERE idGrupoFamiliar = @idGrupoFamiliar
+    SELECT 1 FROM socios.socio WHERE idSocio = @idSocio
   )
   BEGIN
-    RAISERROR('No existe grupo familiar con ID %d.',16,1,@idGrupoFamiliar);
-    RETURN;
+    THROW 50010, 'El socio especificado no existe.', 1;
   END
 
-  -- 3) Verificar que no exista ya la relación activa
-  IF EXISTS (
-    SELECT 1
-      FROM socios.grupoFamiliarActivo
-     WHERE idSocio               = @idSocio
-       AND idGrupoFamiliar       = @idGrupoFamiliar
-       AND estadoGrupoActivo = 1
+  IF NOT EXISTS (
+    SELECT 1 FROM socios.grupoFamiliar WHERE idGrupoFamiliar = @idGrupoFamiliar
   )
   BEGIN
-    RAISERROR(
-      'La relación socio="%s" (ID %d) → grupoFam ID=%d ya está activa.',
-      16,1, @usuario, @idSocio, @idGrupoFamiliar
-    );
-    RETURN;
+    THROW 50011, 'El grupo familiar especificado no existe.', 1;
   END
 
-  -- 4) Insertar nueva relación
-  INSERT INTO socios.grupoFamiliarActivo
-    (idSocio, idGrupoFamiliar, parentescoGrupoFamiliar)
-  VALUES
-    (@idSocio, @idGrupoFamiliar, @parentescoGrupoFamiliar);
+  IF @parentescoGrupoFamiliar NOT IN ('Tutor', 'Menor')
+  BEGIN
+    THROW 50012, 'Parentesco no válido. Debe ser "Tutor" o "Menor".', 1;
+  END
+
+  INSERT INTO socios.grupoFamiliarActivo (
+    idSocio,
+    idGrupoFamiliar,
+    parentescoGrupoFamiliar,
+    estadoGrupoActivo
+  )
+  VALUES (
+    @idSocio,
+    @idGrupoFamiliar,
+    @parentescoGrupoFamiliar,
+    1
+  );
 END
 GO
 
-CREATE PROCEDURE socios.actualizarGrupoFamiliarActivo
-  @usuarioOld                  VARCHAR(50),
-  @idGrupoFamiliarOld          INT,
-  @usuarioNew                  VARCHAR(50),
-  @idGrupoFamiliarNew          INT,
-  @parentescoGrupoFamiliarNew  VARCHAR(10)
+
+CREATE OR ALTER PROCEDURE socios.obtenerGrupoFamiliarDeSocio
+  @idSocio INT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  DECLARE @idSocioOld INT, @idSocioNew INT;
-
-  -- 1.1) Traducir usuarioOld -> idSocioOld
-  SELECT @idSocioOld = idSocio
-    FROM socios.socio
-   WHERE usuario = @usuarioOld
-     AND estadoMembresia = 'Activo';
-
-  IF @idSocioOld IS NULL
-  BEGIN
-    RAISERROR('No se encontró socio activo con usuario "%s".',16,1,@usuarioOld);
-    RETURN;
-  END
-
-  -- 1.2) Verificar que la relación original exista
-  IF NOT EXISTS (
-    SELECT 1
-      FROM socios.grupoFamiliarActivo
-     WHERE idSocio               = @idSocioOld
-       AND idGrupoFamiliar       = @idGrupoFamiliarOld
-       AND estadoGrupoActivo = 1
-  )
-  BEGIN
-    RAISERROR('No existe relación activa usuario "%s" → grupoFam ID=%d.',16,1,
-               @usuarioOld, @idGrupoFamiliarOld);
-    RETURN;
-  END
-
-  -- 1.3) Traducir usuarioNew -> idSocioNew
-  SELECT @idSocioNew = idSocio
-    FROM socios.socio
-   WHERE usuario = @usuarioNew
-     AND estadoMembresia = 'Activo';
-
-  IF @idSocioNew IS NULL
-  BEGIN
-    RAISERROR('No se encontró socio activo con usuario "%s".',16,1,@usuarioNew);
-    RETURN;
-  END
-
-  -- 1.4) Verificar que el grupo nuevo exista
-  IF NOT EXISTS (
-    SELECT 1
-      FROM socios.grupoFamiliar
-     WHERE idGrupoFamiliar = @idGrupoFamiliarNew
-  )
-  BEGIN
-    RAISERROR('No existe grupo familiar con ID %d.',16,1,@idGrupoFamiliarNew);
-    RETURN;
-  END
-
-  -- 1.5) Evitar duplicado destino
-  IF EXISTS (
-    SELECT 1
-      FROM socios.grupoFamiliarActivo
-     WHERE idSocio               = @idSocioNew
-       AND idGrupoFamiliar       = @idGrupoFamiliarNew
-       AND estadoGrupoActivo = 1
-  )
-  BEGIN
-    RAISERROR('La relación usuario "%s" → grupoFam ID=%d ya existe activa.',16,1,
-               @usuarioNew, @idGrupoFamiliarNew);
-    RETURN;
-  END
-
-  -- 1.6) Ejecutar el UPDATE
-  UPDATE socios.grupoFamiliarActivo
-  SET
-    idSocio               = @idSocioNew,
-    idGrupoFamiliar       = @idGrupoFamiliarNew,
-    parentescoGrupoFamiliar = @parentescoGrupoFamiliarNew
-  WHERE
-    idSocio               = @idSocioOld
-    AND idGrupoFamiliar    = @idGrupoFamiliarOld
-    AND estadoGrupoActivo = 1;
-END
+  SELECT 
+    gfa.idGrupoFamiliar,
+    gfa.parentescoGrupoFamiliar,
+    gfa.estadoGrupoActivo
+  FROM socios.grupoFamiliarActivo gfa
+  WHERE gfa.idSocio = @idSocio;
+END;
 GO
 
-CREATE PROCEDURE socios.eliminarGrupoFamiliarActivo
-  @usuario               VARCHAR(50),
-  @idGrupoFamiliar       INT
+CREATE OR ALTER PROCEDURE socios.borradoLogicoGrupoActivo
+  @idSocio INT,
+  @idGrupoFamiliar INT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  DECLARE @idSocio INT;
+  DECLARE @estado VARCHAR(22);
 
-  -- 2.1) Traducir usuario -> idSocio
-  SELECT @idSocio = idSocio
-    FROM socios.socio
-   WHERE usuario = @usuario
-     AND estadoMembresia = 'Activo';
+  SELECT @estado = estadoMorosidadMembresia
+  FROM socios.estadoMembresiaSocio
+  WHERE idSocio = @idSocio;
 
-  IF @idSocio IS NULL
+  IF @estado IS NULL
   BEGIN
-    RAISERROR('No se encontró socio activo con usuario "%s".',16,1,@usuario);
-    RETURN;
+    THROW 50020, 'El estado de membresía del socio no fue encontrado.', 1;
   END
 
-  -- 2.2) Verificar que exista la relación activa
-  IF NOT EXISTS (
-    SELECT 1
-      FROM socios.grupoFamiliarActivo
-     WHERE idSocio               = @idSocio
-       AND idGrupoFamiliar       = @idGrupoFamiliar
-       AND estadoGrupoActivo = 1
-  )
+  IF @estado <> 'Activo'
   BEGIN
-    RAISERROR('No existe relación activa usuario "%s" → grupoFam ID=%d.',16,1,
-               @usuario, @idGrupoFamiliar);
-    RETURN;
+    THROW 50021, 'Solo se puede modificar el grupo familiar si el socio tiene la membresía activa.', 1;
   END
 
-  -- 2.3) Marcarla como inactiva
   UPDATE socios.grupoFamiliarActivo
   SET estadoGrupoActivo = 0
-  WHERE idSocio               = @idSocio
-    AND idGrupoFamiliar       = @idGrupoFamiliar
-    AND estadoGrupoActivo= 1;
-END
+  WHERE idSocio = @idSocio AND idGrupoFamiliar = @idGrupoFamiliar;
+
+  IF @@ROWCOUNT = 0
+  BEGIN
+    THROW 50022, 'No se encontró relación activa para modificar.', 1;
+  END
+END;
 GO
 
 --deporteDisponible
@@ -1318,161 +1267,196 @@ GO
 --deporteActivo
 
 CREATE OR ALTER PROCEDURE actividades.insertarDeporteActivo
-  @usuario                    VARCHAR(50),
-  @idDeporte                 INT,
-  @estadoActividadDeporte    VARCHAR(8),
-  @estadoMembresia           VARCHAR(22)
+  @idSocio INT,
+  @idDeporte INT
 AS
 BEGIN
   SET NOCOUNT ON;
+  BEGIN TRY
+    -- Validar existencia y membresía activa del socio
+    DECLARE @estadoMembresia VARCHAR(22);
 
-  DECLARE @idSocio INT;
+    SELECT @estadoMembresia = estadoMorosidadMembresia
+    FROM socios.estadoMembresiaSocio
+    WHERE idSocio = @idSocio;
 
-  -- Verificar socio activo
-  SELECT @idSocio = idSocio
-    FROM socios.socio
-   WHERE usuario = @usuario
-     AND estadoMembresia = 'Activo';
+    IF @estadoMembresia <> 'Activo'
+      THROW 50011, 'El socio no tiene una membresía activa.', 1;
 
-  IF @idSocio IS NULL
-  BEGIN
-    RAISERROR('No se encontró un socio activo con el usuario "%s".', 16, 1, @usuario);
-    RETURN;
-  END
+    -- Verificar que el deporte exista
+    IF NOT EXISTS (
+      SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte
+    )
+      THROW 50012, 'El deporte especificado no existe.', 1;
 
-  -- Verificar existencia de deporte
-  IF NOT EXISTS (SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte)
-  BEGIN
-    RAISERROR('No existe un deporte con ID %d.', 16, 1, @idDeporte);
-    RETURN;
-  END
-
-  INSERT INTO actividades.deporteActivo (
-    idSocio, idDeporte, estadoActividadDeporte, estadoMembresia
-  )
-  VALUES (
-    @idSocio, @idDeporte, @estadoActividadDeporte, @estadoMembresia
-  );
-END
+    -- Insertar actividad deportiva activa
+    INSERT INTO actividades.deporteActivo (
+      idSocio, idDeporte, estadoActividadDeporte, estadoMembresia
+    )
+    VALUES (
+      @idSocio, @idDeporte, 'Activo', @estadoMembresia
+    );
+  END TRY
+  BEGIN CATCH
+    THROW;
+  END CATCH
+END;
 GO
 
-CREATE OR ALTER PROCEDURE actividades.actualizarDeporteActivo
-  @idDeporteActivo           INT,
-  @estadoActividadDeporte    VARCHAR(8),
-  @estadoMembresia           VARCHAR(22)
+
+CREATE OR ALTER PROCEDURE actividades.obtenerDeportesDeSocio
+  @idSocio INT
 AS
 BEGIN
   SET NOCOUNT ON;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM actividades.deporteActivo WHERE idDeporteActivo = @idDeporteActivo
-  )
-  BEGIN
-    RAISERROR('No existe una actividad con ID %d.', 16, 1, @idDeporteActivo);
-    RETURN;
-  END
-
-  UPDATE actividades.deporteActivo
-  SET
-    estadoActividadDeporte = @estadoActividadDeporte,
-    estadoMembresia = @estadoMembresia
-  WHERE idDeporteActivo = @idDeporteActivo;
-END
+  SELECT da.idDeporteActivo, d.descripcion, d.tipo, d.costoPorMes,
+         da.estadoActividadDeporte, da.estadoMembresia
+  FROM actividades.deporteActivo da
+  JOIN actividades.deporteDisponible d ON da.idDeporte = d.idDeporte
+  WHERE da.idSocio = @idSocio;
+END;
 GO
 
-CREATE OR ALTER PROCEDURE actividades.eliminarDeporteActivo
+
+CREATE OR ALTER PROCEDURE actividades.borrarLogicamenteDeporteActivo
   @idDeporteActivo INT
 AS
 BEGIN
   SET NOCOUNT ON;
+  BEGIN TRY
+    DECLARE @idSocio INT, @estadoMembresia VARCHAR(22);
 
-  IF NOT EXISTS (
-    SELECT 1 FROM actividades.deporteActivo
-     WHERE idDeporteActivo = @idDeporteActivo
-       AND estadoMembresia <> 'Inactivo'
-  )
-  BEGIN
-    RAISERROR('No se encontró una actividad activa con ID %d.', 16, 1, @idDeporteActivo);
-    RETURN;
-  END
+    SELECT @idSocio = idSocio FROM actividades.deporteActivo WHERE idDeporteActivo = @idDeporteActivo;
 
-  UPDATE actividades.deporteActivo
-  SET estadoMembresia = 'Inactivo'
-  WHERE idDeporteActivo = @idDeporteActivo;
-END
+    IF @idSocio IS NULL
+      THROW 50020, 'No se encontró la actividad deportiva especificada.', 1;
+
+    SELECT @estadoMembresia = estadoMorosidadMembresia
+    FROM socios.estadoMembresiaSocio
+    WHERE idSocio = @idSocio;
+
+    IF @estadoMembresia IS NULL OR @estadoMembresia <> 'Activo'
+      THROW 50021, 'El socio no tiene membresía activa, no se puede desactivar la actividad.', 1;
+
+    UPDATE actividades.deporteActivo
+    SET estadoActividadDeporte = 'Inactivo'
+    WHERE idDeporteActivo = @idDeporteActivo;
+  END TRY
+  BEGIN CATCH
+    THROW;
+  END CATCH
+END;
 GO
+
 
 --actividadPileta
 
 CREATE OR ALTER PROCEDURE actividades.insertarActividadPileta
-  @tarifaSocioPorDia        DECIMAL(10, 2),
-  @tarifaSocioPorMes        DECIMAL(10, 2),
-  @tarifaSocioPorTemporada  DECIMAL(10, 2),
-  @tarifaInvitadoPorDia     DECIMAL(10, 2),
-  @tarifaInvitadoPorMes     DECIMAL(10, 2),
-  @tarifaInvitadoPorTemporada DECIMAL(10, 2),
-  @horaAperturaActividad    DATE,
-  @horaCierreActividad      DATE
+  @tarifaSocioPorDia           DECIMAL(10, 2),
+  @tarifaSocioPorMes           DECIMAL(10, 2),
+  @tarifaSocioPorTemporada     DECIMAL(10, 2),
+  @tarifaInvitadoPorDia        DECIMAL(10, 2),
+  @tarifaInvitadoPorMes        DECIMAL(10, 2),
+  @tarifaInvitadoPorTemporada  DECIMAL(10, 2),
+  @horaAperturaActividad       DATE,
+  @horaCierreActividad         DATE
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF @horaCierreActividad <= @horaAperturaActividad
+  -- 1) Validar tarifas
+  IF @tarifaSocioPorDia <= 0 OR
+     @tarifaSocioPorMes <= 0 OR
+     @tarifaSocioPorTemporada <= 0 OR
+     @tarifaInvitadoPorDia <= 0 OR
+     @tarifaInvitadoPorMes <= 0 OR
+     @tarifaInvitadoPorTemporada <= 0
   BEGIN
-    RAISERROR('La hora de cierre debe ser posterior a la de apertura.', 16, 1);
-    RETURN;
+    THROW 50010, 'Todas las tarifas deben ser mayores a cero.', 1;
   END
 
+  -- 2) Validar horario
+  IF @horaCierreActividad <= @horaAperturaActividad
+  BEGIN
+    THROW 50011, 'La hora de cierre debe ser posterior a la de apertura.', 1;
+  END
+
+  -- 3) Insertar registro
   INSERT INTO actividades.actividadPileta (
-    tarifaSocioPorDia, tarifaSocioPorMes, tarifaSocioPorTemporada,
-    tarifaInvitadoPorDia, tarifaInvitadoPorMes, tarifaInvitadoPorTemporada,
-    horaAperturaActividad, horaCierreActividad
+    tarifaSocioPorDia,
+    tarifaSocioPorMes,
+    tarifaSocioPorTemporada,
+    tarifaInvitadoPorDia,
+    tarifaInvitadoPorMes,
+    tarifaInvitadoPorTemporada,
+    horaAperturaActividad,
+    horaCierreActividad
   )
   VALUES (
-    @tarifaSocioPorDia, @tarifaSocioPorMes, @tarifaSocioPorTemporada,
-    @tarifaInvitadoPorDia, @tarifaInvitadoPorMes, @tarifaInvitadoPorTemporada,
-    @horaAperturaActividad, @horaCierreActividad
+    @tarifaSocioPorDia,
+    @tarifaSocioPorMes,
+    @tarifaSocioPorTemporada,
+    @tarifaInvitadoPorDia,
+    @tarifaInvitadoPorMes,
+    @tarifaInvitadoPorTemporada,
+    @horaAperturaActividad,
+    @horaCierreActividad
   );
 END;
 GO
 
 
+
 CREATE OR ALTER PROCEDURE actividades.actualizarActividadPileta
-  @idActividad              INT,
-  @tarifaSocioPorDia        DECIMAL(10, 2),
-  @tarifaSocioPorMes        DECIMAL(10, 2),
-  @tarifaSocioPorTemporada  DECIMAL(10, 2),
-  @tarifaInvitadoPorDia     DECIMAL(10, 2),
-  @tarifaInvitadoPorMes     DECIMAL(10, 2),
-  @tarifaInvitadoPorTemporada DECIMAL(10, 2),
-  @horaAperturaActividad    DATE,
-  @horaCierreActividad      DATE
+  @idActividad                 INT,
+  @tarifaSocioPorDia           DECIMAL(10, 2),
+  @tarifaSocioPorMes           DECIMAL(10, 2),
+  @tarifaSocioPorTemporada     DECIMAL(10, 2),
+  @tarifaInvitadoPorDia        DECIMAL(10, 2),
+  @tarifaInvitadoPorMes        DECIMAL(10, 2),
+  @tarifaInvitadoPorTemporada  DECIMAL(10, 2),
+  @horaAperturaActividad       DATE,
+  @horaCierreActividad         DATE
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF NOT EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad)
+  -- 1) Verificar existencia
+  IF NOT EXISTS (
+    SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad
+  )
   BEGIN
-    RAISERROR('La actividad de pileta con ID %d no existe.', 16, 1, @idActividad);
-    RETURN;
+    THROW 50020, 'Actividad de pileta no encontrada.', 1;
   END
 
+  -- 2) Validar tarifas
+  IF @tarifaSocioPorDia <= 0 OR
+     @tarifaSocioPorMes <= 0 OR
+     @tarifaSocioPorTemporada <= 0 OR
+     @tarifaInvitadoPorDia <= 0 OR
+     @tarifaInvitadoPorMes <= 0 OR
+     @tarifaInvitadoPorTemporada <= 0
+  BEGIN
+    THROW 50021, 'Todas las tarifas deben ser mayores a cero.', 1;
+  END
+
+  -- 3) Validar horario
   IF @horaCierreActividad <= @horaAperturaActividad
   BEGIN
-    RAISERROR('La hora de cierre debe ser posterior a la de apertura.', 16, 1);
-    RETURN;
+    THROW 50022, 'La hora de cierre debe ser posterior a la de apertura.', 1;
   END
 
+  -- 4) Actualizar registro
   UPDATE actividades.actividadPileta
   SET
-    tarifaSocioPorDia        = @tarifaSocioPorDia,
-    tarifaSocioPorMes        = @tarifaSocioPorMes,
-    tarifaSocioPorTemporada  = @tarifaSocioPorTemporada,
-    tarifaInvitadoPorDia     = @tarifaInvitadoPorDia,
-    tarifaInvitadoPorMes     = @tarifaInvitadoPorMes,
-    tarifaInvitadoPorTemporada = @tarifaInvitadoPorTemporada,
-    horaAperturaActividad    = @horaAperturaActividad,
-    horaCierreActividad      = @horaCierreActividad
+    tarifaSocioPorDia           = @tarifaSocioPorDia,
+    tarifaSocioPorMes           = @tarifaSocioPorMes,
+    tarifaSocioPorTemporada     = @tarifaSocioPorTemporada,
+    tarifaInvitadoPorDia        = @tarifaInvitadoPorDia,
+    tarifaInvitadoPorMes        = @tarifaInvitadoPorMes,
+    tarifaInvitadoPorTemporada  = @tarifaInvitadoPorTemporada,
+    horaAperturaActividad       = @horaAperturaActividad,
+    horaCierreActividad         = @horaCierreActividad
   WHERE idActividad = @idActividad;
 END;
 GO
@@ -1484,12 +1468,15 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  IF NOT EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad)
+  -- 1) Verificar existencia
+  IF NOT EXISTS (
+    SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad
+  )
   BEGIN
-    RAISERROR('La actividad de pileta con ID %d no existe.', 16, 1, @idActividad);
-    RETURN;
+    THROW 50030, 'Actividad de pileta no encontrada.', 1;
   END
 
+  -- 2) Eliminar registro
   DELETE FROM actividades.actividadPileta
   WHERE idActividad = @idActividad;
 END;
@@ -1621,25 +1608,6 @@ GO
 
 -- :::::::::::::::::::::::::::::::::::::::::::: PAGOS ::::::::::::::::::::::::::::::::::::::::::::
 
-
-CREATE OR ALTER PROCEDURE pagos.insertarTarjetaDisponible
-  @tipoTarjeta VARCHAR(7),
-  @descripcion VARCHAR(25)
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  IF @tipoTarjeta NOT IN ('Credito', 'Debito', 'Prepaga', 'Virtual')
-  BEGIN
-    RAISERROR('El tipo de tarjeta debe ser uno de: Credito, Debito, Prepaga, Virtual.', 16, 1);
-    RETURN;
-  END
-
-  INSERT INTO pagos.tarjetaDisponible (tipoTarjeta, descripcion)
-  VALUES (@tipoTarjeta, @descripcion);
-END
-GO
-
 CREATE OR ALTER PROCEDURE pagos.insertarTarjetaDisponible
   @tipoTarjeta VARCHAR(7),
   @descripcion VARCHAR(25)
@@ -1709,126 +1677,96 @@ END
 GO
 
 CREATE OR ALTER PROCEDURE pagos.insertarTarjetaEnUso
-  @idSocio       INT,
-  @idTarjeta     INT,
-  @tipoTarjeta   VARCHAR(7),
+  @idSocio INT,
+  @idTarjeta INT,
+  @tipoTarjeta VARCHAR(7),
   @numeroTarjeta BIGINT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- 1) Validación de tipoTarjeta
-  IF @tipoTarjeta NOT IN ('Credito','Debito','Prepaga','Virtual')
-  BEGIN
-    RAISERROR('Tipo de tarjeta inválido.',16,1);
-    RETURN;
-  END
-
-  -- 2) Validación de númeroTarjeta
-  IF @numeroTarjeta <= 0
-  BEGIN
-    RAISERROR('El número de tarjeta debe ser > 0.',16,1);
-    RETURN;
-  END
-
-  -- 3) Verificar socio activo
+  -- 1. Validar membresía activa
   IF NOT EXISTS (
-    SELECT 1 FROM socios.socio
-     WHERE idSocio = @idSocio
-       AND estadoMembresia = 'Activo'
+    SELECT 1
+    FROM socios.estadoMembresiaSocio
+    WHERE idSocio = @idSocio AND estadoMorosidadMembresia = 'Activo'
   )
   BEGIN
-    RAISERROR('Socio inexistente o no activo.',16,1);
+    RAISERROR('El socio no tiene una membresía activa.', 16, 1);
     RETURN;
-  END
+  END;
 
-  -- 4) Verificar tarjeta válida
+  -- 2. Validar existencia de la tarjeta disponible
   IF NOT EXISTS (
-    SELECT 1 FROM pagos.tarjetaDisponible
-     WHERE idTarjeta = @idTarjeta
-       AND tipoTarjeta = @tipoTarjeta
+    SELECT 1
+    FROM pagos.tarjetaDisponible
+    WHERE idTarjeta = @idTarjeta AND tipoTarjeta = @tipoTarjeta
   )
   BEGIN
-    RAISERROR('Tarjeta no disponible.',16,1);
+    RAISERROR('La tarjeta especificada no está registrada como disponible.', 16, 1);
     RETURN;
-  END
+  END;
 
-  -- 5) Insertar (activo = 1 por defecto)
-  INSERT INTO pagos.tarjetaEnUso
-    (idSocio, idTarjeta, tipoTarjeta, numeroTarjeta)
-  VALUES
-    (@idSocio, @idTarjeta, @tipoTarjeta, @numeroTarjeta);
-END
+  -- 3. Insertar relación tarjeta-socio
+  INSERT INTO pagos.tarjetaEnUso (
+    idSocio, idTarjeta, tipoTarjeta, numeroTarjeta, estadoTarjeta
+  )
+  VALUES (
+    @idSocio, @idTarjeta, @tipoTarjeta, @numeroTarjeta, 1
+  );
+END;
 GO
 
-CREATE PROCEDURE pagos.actualizarTarjetaEnUso
-  @idSocio       INT,
-  @idTarjeta     INT,
-  @tipoTarjeta   VARCHAR(7),
-  @nuevoNumero   BIGINT
+
+CREATE OR ALTER PROCEDURE pagos.consultarTarjetasEnUsoPorSocio
+  @idSocio INT
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- 1) Validar nuevo número
-  IF @nuevoNumero <= 0
-  BEGIN
-    RAISERROR('El número de tarjeta debe ser > 0.',16,1);
-    RETURN;
-  END
-
-  -- 2) Verificar registro activo
-  IF NOT EXISTS (
-    SELECT 1 FROM pagos.tarjetaEnUso
-     WHERE idSocio       = @idSocio
-       AND idTarjeta     = @idTarjeta
-       AND tipoTarjeta   = @tipoTarjeta
-       AND estadoTarjeta        = 1
-  )
-  BEGIN
-    RAISERROR('Tarjeta en uso no encontrada o inactiva.',16,1);
-    RETURN;
-  END
-
-  -- 3) Actualizar número
-  UPDATE pagos.tarjetaEnUso
-  SET numeroTarjeta = @nuevoNumero
-  WHERE idSocio     = @idSocio
-    AND idTarjeta   = @idTarjeta
-    AND tipoTarjeta = @tipoTarjeta
-    AND estadoTarjeta      = 1;
-END
+  SELECT 
+    t.idTarjeta,
+    t.tipoTarjeta,
+    t.descripcion,
+    tu.numeroTarjeta,
+    tu.estadoTarjeta
+  FROM pagos.tarjetaEnUso tu
+  JOIN pagos.tarjetaDisponible t
+    ON tu.idTarjeta = t.idTarjeta AND tu.tipoTarjeta = t.tipoTarjeta
+  WHERE tu.idSocio = @idSocio;
+END;
 GO
 
-CREATE PROCEDURE pagos.eliminarTarjetaEnUso
-  @idSocio       INT,
-  @idTarjeta     INT,
-  @tipoTarjeta   VARCHAR(7)
+
+CREATE OR ALTER PROCEDURE pagos.borrarLogicoTarjetaEnUso
+  @idSocio INT,
+  @idTarjeta INT,
+  @tipoTarjeta VARCHAR(7)
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- 1) Verificar registro activo
+  -- Validar membresía
   IF NOT EXISTS (
-    SELECT 1 FROM pagos.tarjetaEnUso
-     WHERE idSocio       = @idSocio
-       AND idTarjeta     = @idTarjeta
-       AND tipoTarjeta   = @tipoTarjeta
-       AND estadoTarjeta = 1
+    SELECT 1
+    FROM socios.estadoMembresiaSocio
+    WHERE idSocio = @idSocio AND estadoMorosidadMembresia = 'Activo'
   )
   BEGIN
-    RAISERROR('Tarjeta en uso no encontrada o ya inactiva.',16,1);
+    RAISERROR('El socio no tiene una membresía activa.', 16, 1);
     RETURN;
-  END
+  END;
 
-  -- 2) Marcar como inactiva
+  -- Actualizar estadoTarjeta a 0 (borrado lógico)
   UPDATE pagos.tarjetaEnUso
-  SET estadoTarjeta   = 0
-  WHERE idSocio       = @idSocio
-    AND idTarjeta     = @idTarjeta
-    AND tipoTarjeta   = @tipoTarjeta
-    AND estadoTarjeta = 1;
-END
+  SET estadoTarjeta = 0
+  WHERE idSocio = @idSocio AND idTarjeta = @idTarjeta AND tipoTarjeta = @tipoTarjeta;
+
+  IF @@ROWCOUNT = 0
+  BEGIN
+    RAISERROR('No se encontró una tarjeta en uso con esos datos.', 16, 1);
+  END;
+END;
 GO
 
 CREATE OR ALTER PROCEDURE pagos.insertarCobroFactura
