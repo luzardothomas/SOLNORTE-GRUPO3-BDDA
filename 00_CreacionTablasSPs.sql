@@ -61,7 +61,7 @@ GO
 -- 1.3 socios.grupoFamiliar
 CREATE TABLE socios.grupoFamiliar (
 	idGrupoFamiliar INT PRIMARY KEY IDENTITY(1,1),
-	cantidadGrupoFamiliar INT NOT NULL CHECK (cantidadGrupoFamiliar > 0)
+	cantidadGrupoFamiliar SMALLINT NOT NULL CHECK (cantidadGrupoFamiliar > 0)
 );
 GO
 
@@ -78,9 +78,13 @@ GO
 CREATE TABLE actividades.actividadPileta (
 	idActividad INT PRIMARY KEY IDENTITY(1,1),
 	tarifaSocioPorDia DECIMAL(10, 2) CHECK (tarifaSocioPorDia > 0) NOT NULL,
+	tarifaSocioPorMes DECIMAL (10,2) CHECK (tarifaSocioPorMes > 0) NOT NULL,
+	tarifaSocioPorTemporada DECIMAL (10,2) CHECK (tarifaSocioPorTemporada > 0) NOT NULL,
 	tarifaInvitadoPorDia DECIMAL(10, 2) CHECK (tarifaInvitadoPorDia > 0) NOT NULL,
-	horaAperturaActividad INT NOT NULL,
-	horaCierreActividad INT NOT NULL
+	tarifaInvitadoPorMes DECIMAL(10, 2) CHECK (tarifaInvitadoPorMes > 0) NOT NULL,
+	tarifaInvitadoPorTemporada DECIMAL(10, 2) CHECK (tarifaInvitadoPorTemporada > 0) NOT NULL,
+	horaAperturaActividad DATE NOT NULL,
+	horaCierreActividad DATE NOT NULL
 );
 GO
 
@@ -107,8 +111,8 @@ CREATE TABLE itinerarios.datosSUM (
 	idSitio INT PRIMARY KEY IDENTITY(1,1),
 	tarifaHorariaSocio DECIMAL(10, 2) CHECK (tarifaHorariaSocio > 0) NOT NULL,
 	tarifaHorariaInvitado DECIMAL(10, 2) CHECK (tarifaHorariaInvitado > 0) NOT NULL,
-	horaMinimaReserva INT NOT NULL,
-	horaMaximaReserva INT NOT NULL
+	horaMinimaReserva DATE NOT NULL,
+	horaMaximaReserva DATE NOT NULL
 );
 GO
 
@@ -120,6 +124,18 @@ CREATE TABLE coberturas.coberturaDisponible (
 	activo BIT DEFAULT 1 -- 1 para activo, 0 para eliminado lógicamente
 );
 GO
+
+-- 1.10 socios.ingresoSocio
+
+CREATE TABLE socios.ingresoSocio (
+	idSocio INT PRIMARY KEY IDENTITY (1,1),
+	fechaIngreso DATE,
+	primerUsuario VARCHAR(50),
+	primerContraseña VARCHAR(10) UNIQUE,
+	tipoCategoriaSocio VARCHAR(15)
+);
+GO
+
 
 -- 2. Tablas que dependen de las tablas base
 
@@ -135,18 +151,26 @@ CREATE TABLE socios.socio (
     telefono VARCHAR(14),
     fechaNacimiento DATE,
     fechaDeVigenciaContrasenia DATE,
-	fechaIngresoSocio DATE,
     contactoDeEmergencia VARCHAR(14),
     usuario VARCHAR(50) UNIQUE,
     contrasenia VARCHAR(10),
-    estadoMembresia VARCHAR(22) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
-	fechaVencimientoMembresia DATE,
     -- saldoAFavor DECIMAL(10, 2) CHECK (saldoAFavor >= 0), GENERAR UNA ENTIDAD DE ESTO
     direccion VARCHAR(25),
 	CONSTRAINT PK_socio PRIMARY KEY (idSocio),
-	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaSocio(idCategoria)
+	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaSocio(idCategoria),
+	FOREIGN KEY (idSocio) REFERENCES socios.ingresoSocio(idSocio)
 );
 GO
+
+-- 2.2 socios.estadoMembresiaSocio
+
+CREATE TABLE estadoMembresiaSocio (
+	idSocio INT PRIMARY KEY IDENTITY (1,1),
+	tipoCategoriaSocio VARCHAR(15),
+	estadoMembresia VARCHAR(22) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
+	fechaVencimientoMembresia DATE,
+	FOREIGN KEY (idSocio) REFERENCES socios.ingresoSocio(idSocio)
+)
 
 -- 3. Tablas con dependencias de segundo nivel
 
@@ -160,7 +184,6 @@ CREATE TABLE socios.rolVigente (
     FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
 );
 GO
-
 
 -- 3.2 socios.grupoFamiliarActivo
 CREATE TABLE socios.grupoFamiliarActivo (
@@ -199,11 +222,23 @@ CREATE TABLE pagos.tarjetaEnUso (
 );
 GO
 
+-- 3.4 pagos.facturaActiva
+
+CREATE TABLE pagos.facturaActiva (
+	idFactura INT PRIMARY KEY IDENTITY (1,1),
+	idSocio INT NOT NULL,
+	categoriaSocio INT NOT NULL,
+	estadoFactura VARCHAR(15) CHECK (estadoFactura IN ('Pendiente', 'Pagada', 'Nulificada')),
+	fechaEmision DATE,
+	fechaPrimerVencimiento DATE,
+	fechaSegundoVencimiento DATE,
+	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
+	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaSocio(idCategoria)
+)
+
 -- 3.5 pagos.facturaEmitida
 CREATE TABLE pagos.facturaEmitida (
-    idFactura INT PRIMARY KEY IDENTITY(1,1),
-	idSocio INT,
-	categoriaSocio INT NOT NULL,
+    idFactura INT NOT NULL,
 	nombreSocio VARCHAR(10) NOT NULL,
 	apellidoSocio VARCHAR(10) NOT NULL,
 	fechaEmision DATE DEFAULT GETDATE(),
@@ -212,10 +247,18 @@ CREATE TABLE pagos.facturaEmitida (
 	modalidadCobro VARCHAR(25) NOT NULL,
 	importeBruto DECIMAL(10, 2) NOT NULL CHECK (importeBruto >= 0),
 	importeTotal DECIMAL(10, 2) NOT NULL CHECK (importeTotal >= 0),
-    fechaPrimerVencimiento DATE NOT NULL,
-    fechaSegundoVencimiento DATE NOT NULL,
-	estadoFactura varchar(10) NOT NULL CHECK (estadoFactura IN('Pendiente', 'Pagada', 'Nulificada')),
-    CONSTRAINT FK_facturaEmitida FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
+	CONSTRAINT PK_facturaEmitida PRIMARY KEY (idFactura)
+);
+GO
+
+CREATE TABLE pagos.cuerpoFactura (
+	idFactura INT NOT NULL,
+	idItemFactura INT NOT NULL,
+	tipoItem VARCHAR(20),
+	descripcionItem VARCHAR(25),
+	importeItem DECIMAL(10,2)
+	CONSTRAINT PK_cuerpoFactura PRIMARY KEY (idFactura, idItemFactura),
+	FOREIGN KEY (idFactura) REFERENCES pagos.facturaEmitida(idFactura)
 );
 GO
 
@@ -225,8 +268,6 @@ CREATE TABLE pagos.cobroFactura (
     idFacturaCobrada INT,
     idSocio INT,
     categoriaSocio INT NOT NULL,
-    idServicioCobrado INT NOT NULL,
-    descripcionServicioCobrado VARCHAR(50) NOT NULL,
     fechaEmisionCobro DATE NOT NULL,
     nombreSocio VARCHAR(10) NOT NULL,
     apellidoSocio VARCHAR(10) NOT NULL,
@@ -238,6 +279,18 @@ CREATE TABLE pagos.cobroFactura (
 	CONSTRAINT PK_cobroFactura PRIMARY KEY (idCobro, idFacturaCobrada),
     CONSTRAINT FK_cobroFactura FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
     FOREIGN KEY (idFacturaCobrada) REFERENCES pagos.facturaEmitida(idFactura)
+);
+GO
+
+CREATE TABLE pagos.cuerpoCobro(
+	idCobro INT NOT NULL,
+	idFactura INT NOT NULL,
+	idItemCobro INT IDENTITY(1,1),
+	tipoItem VARCHAR(20),
+	despricionItem VARCHAR(25),
+	importeItem DECIMAL(10,2),
+	CONSTRAINT PK_cuerpoCobro PRIMARY KEY (idCobro, idFactura, idItemCobro),
+	FOREIGN KEY (idCobro, idFactura) REFERENCES pagos.cobroFactura(idCobro,idFacturaCobrada)
 );
 GO
 
@@ -332,14 +385,14 @@ GO
 
 -- 3.14 actividades.presentismoActividadSocio
 CREATE TABLE actividades.presentismoActividadSocio (
-	idSocio INT NOT NULL,
-	idDeporteActivo INT NOT NULL,
-	fechaActividad VARCHAR(10) NOT NULL, -- lo pense como poner en que dia es la actividad, por eso no un DATE
-	estadoPresentismo VARCHAR(8) NOT NULL CHECK (estadoPresentismo in ('Activo', 'Inactivo')),
-	profesorDeporte VARCHAR(35) NOT NULL,
-	CONSTRAINT PK_presentismoActividadSocio PRIMARY KEY (idSocio, idDeporteActivo),
-	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
-	FOREIGN KEY (idDeporteActivo) REFERENCES actividades.deporteActivo(idDeporteActivo)
+    idSocio INT NOT NULL,
+    idDeporteActivo INT NOT NULL,
+    fechaActividad DATE NOT NULL,
+    estadoPresentismo VARCHAR(1) NOT NULL CHECK (estadoPresentismo in ('P', 'A', 'J')), -- (P)RESENTE, (A)usente y Ausente (J)ustificado
+    profesorDeporte VARCHAR(35) NOT NULL,
+    CONSTRAINT PK_presentismoActividadSocio PRIMARY KEY (idSocio, idDeporteActivo),
+    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
+    FOREIGN KEY (idDeporteActivo) REFERENCES actividades.deporteActivo(idDeporteActivo)
 );
 GO
 
