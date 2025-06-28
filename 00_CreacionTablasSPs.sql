@@ -141,7 +141,7 @@ GO
 
 -- 2.1 socios.socio
 CREATE TABLE socios.socio (
-    idSocio INT IDENTITY(1,1),
+    idSocio INT NOT NULL,
 	categoriaSocio INT NOT NULL,
     dni varchar(10) NOT NULL,
     cuil varchar(13) NOT NULL,
