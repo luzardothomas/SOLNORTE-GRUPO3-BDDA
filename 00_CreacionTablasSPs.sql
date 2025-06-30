@@ -59,10 +59,21 @@ CREATE TABLE socios.rolDisponible (
 );
 GO
 
--- 1.3 socios.grupoFamiliar
+-- 1.3 socios.grupoFamiliar (con cambios para almacenar a los miembros individuales del csv)
 CREATE TABLE socios.grupoFamiliar (
-	idGrupoFamiliar INT PRIMARY KEY IDENTITY(1,1),
-	cantidadGrupoFamiliar SMALLINT NOT NULL CHECK (cantidadGrupoFamiliar > 0)
+    idGrupoFamiliar INT PRIMARY KEY,
+    idSocioResponsable INT NOT NULL,
+    nombre VARCHAR(50) NOT NULL,
+    apellido VARCHAR(50) NOT NULL,
+    dni VARCHAR(10) NOT NULL UNIQUE, 
+    emailPersonal VARCHAR(50) NULL,
+    fechaNacimiento DATE NULL,
+    telefonoContacto VARCHAR(14) NULL,
+    telefonoContactoEmergencia VARCHAR(14) NULL,
+    nombreObraSocial VARCHAR(50) NULL,
+    nroSocioObraSocial VARCHAR(50) NULL,
+    telefonoObraSocialEmergencia VARCHAR(14) NULL,
+    -- cantidadGrupoFamiliar SMALLINT NOT NULL CHECK (cantidadGrupoFamiliar > 0), -- ahora no tiene un motivo de estar ya que son miembros individuales
 );
 GO
 
@@ -187,7 +198,6 @@ CREATE TABLE socios.saldoAFavorSocio (
 	CONSTRAINT PK_saldo PRIMARY KEY (idSocio),
 	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
 );
-
 
 -- 3. Tablas con dependencias de segundo nivel
 
