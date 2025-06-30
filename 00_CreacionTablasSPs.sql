@@ -68,12 +68,11 @@ CREATE TABLE socios.grupoFamiliar (
     dni VARCHAR(10) NOT NULL UNIQUE, 
     emailPersonal VARCHAR(50) NULL,
     fechaNacimiento DATE NULL,
-    telefonoContacto VARCHAR(14) NULL,
-    telefonoContactoEmergencia VARCHAR(14) NULL,
+    telefonoContacto VARCHAR(20) NULL,
+    telefonoContactoEmergencia VARCHAR(20) NULL,
     nombreObraSocial VARCHAR(50) NULL,
     nroSocioObraSocial VARCHAR(50) NULL,
-    telefonoObraSocialEmergencia VARCHAR(14) NULL,
-    -- cantidadGrupoFamiliar SMALLINT NOT NULL CHECK (cantidadGrupoFamiliar > 0), -- ahora no tiene un motivo de estar ya que son miembros individuales
+    telefonoObraSocialEmergencia VARCHAR(14) NULL
 );
 GO
 
@@ -81,7 +80,7 @@ GO
 CREATE TABLE actividades.deporteDisponible (
 	idDeporte INT PRIMARY KEY IDENTITY(1,1),
     descripcion VARCHAR(20) NOT NULL,
-    --tipo VARCHAR(10), -- Capaz conviene eliminarlo
+    tipo VARCHAR(10), -- Capaz conviene eliminarlo
 	costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0) NOT NULL,
 	vigenciaHasta DATE NOT NULL
 );
@@ -1248,36 +1247,6 @@ BEGIN
   DELETE FROM actividades.deporteDisponible
   WHERE idDeporte = @idDeporte;
 END
-GO
-
---InsertarDeportes.
-
-EXEC actividades.insertarDeporteDisponible
-  @descripcion = 'Fútbol',
-  @tipo = 'Equipo',
-  @costoPorMes = 25000.00;
-
-EXEC actividades.insertarDeporteDisponible
-  @descripcion = 'Natación',
-  @tipo = 'Individual',
-  @costoPorMes = 45000.00;
-
-EXEC actividades.insertarDeporteDisponible
-  @descripcion = 'Tenis',
-  @tipo = 'Individual',
-  @costoPorMes = 18000.00;
-
---ActualizarDeporte
-
-  EXEC actividades.actualizarDeporteDisponible
-  @idDeporte = 2,
-  @descripcion = 'Natación',
-  @tipo = 'Grupo',
-  @costoPorMes = 26000.00;
-
---EliminarDeporte
-EXEC actividades.eliminarDeporteDisponible
-  @idDeporte = 3;
 GO
 
 --deporteActivo
