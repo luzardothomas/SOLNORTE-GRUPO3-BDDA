@@ -46,6 +46,7 @@ CREATE TABLE socios.categoriaMembresiaSocio (
     idCategoria INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(15) NOT NULL,
     costoMembresia DECIMAL(10, 2) NOT NULL CHECK (costoMembresia > 0),
+	vigenciaHasta DATE NOT NULL,
 	estadoCategoriaSocio BIT NOT NULL CONSTRAINT categoriaSocio_actividad DEFAULT(1)
 );
 GO
@@ -69,22 +70,30 @@ GO
 CREATE TABLE actividades.deporteDisponible (
 	idDeporte INT PRIMARY KEY IDENTITY(1,1),
     descripcion VARCHAR(20) NOT NULL,
-    tipo VARCHAR(10) NOT NULL,
-	costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0) NOT NULL
+    --tipo VARCHAR(10), -- Capaz conviene eliminarlo
+	costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0) NOT NULL,
+	vigenciaHasta DATE NOT NULL
 );
 GO
 
 -- 1.5 actividades.actividadPileta
 CREATE TABLE actividades.actividadPileta (
-	idActividad INT PRIMARY KEY IDENTITY(1,1),
-	tarifaSocioPorDia DECIMAL(10, 2) CHECK (tarifaSocioPorDia > 0) NOT NULL,
-	tarifaSocioPorMes DECIMAL (10,2) CHECK (tarifaSocioPorMes > 0) NOT NULL,
-	tarifaSocioPorTemporada DECIMAL (10,2) CHECK (tarifaSocioPorTemporada > 0) NOT NULL,
-	tarifaInvitadoPorDia DECIMAL(10, 2) CHECK (tarifaInvitadoPorDia > 0) NOT NULL,
-	tarifaInvitadoPorMes DECIMAL(10, 2) CHECK (tarifaInvitadoPorMes > 0) NOT NULL,
-	tarifaInvitadoPorTemporada DECIMAL(10, 2) CHECK (tarifaInvitadoPorTemporada > 0) NOT NULL,
-	horaAperturaActividad DATE NOT NULL,
-	horaCierreActividad DATE NOT NULL
+    idActividad INT PRIMARY KEY IDENTITY(1,1),
+    tarifaSocioPorDiaAdulto DECIMAL(10, 2) CHECK (tarifaSocioPorDiaAdulto > 0) NOT NULL,
+    tarifaSocioPorTemporadaAdulto DECIMAL (10,2) CHECK (tarifaSocioPorTemporadaAdulto > 0) NOT NULL,
+    tarifaSocioPorMesAdulto DECIMAL (10,2) CHECK (tarifaSocioPorMesAdulto > 0) NOT NULL,
+    tarifaSocioPorDiaMenor DECIMAL(10, 2) CHECK (tarifaSocioPorDiaMenor > 0) NOT NULL,
+    tarifaSocioPorTemporadaMenor DECIMAL (10,2) CHECK (tarifaSocioPorTemporadaMenor > 0) NOT NULL,
+    tarifaSocioPorMesMenor DECIMAL (10,2) CHECK (tarifaSocioPorMesMenor > 0) NOT NULL,
+    tarifaInvitadoPorDiaAdulto DECIMAL(10, 2) CHECK (tarifaInvitadoPorDiaAdulto > 0) NOT NULL,
+    tarifaInvitadoPorTemporadaAdulto DECIMAL(10, 2) CHECK (tarifaInvitadoPorTemporadaAdulto > 0) NOT NULL,
+    tarifaInvitadoPorMesAdulto DECIMAL(10, 2) CHECK (tarifaInvitadoPorMesAdulto > 0) NOT NULL,
+    tarifaInvitadoPorDiaMenor DECIMAL(10, 2) CHECK (tarifaInvitadoPorDiaMenor > 0) NOT NULL,
+    tarifaInvitadoPorTemporadaMenor DECIMAL(10, 2) CHECK (tarifaInvitadoPorTemporadaMenor > 0) NOT NULL,
+    tarifaInvitadoPorMesMenor DECIMAL(10, 2) CHECK (tarifaInvitadoPorMesMenor > 0) NOT NULL,
+    horaAperturaActividad TIME NOT NULL,
+    horaCierreActividad TIME NOT NULL,
+    vigenciaHasta DATE NOT NULL
 );
 GO
 

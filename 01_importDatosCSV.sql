@@ -4,21 +4,6 @@ GO
 
 -- Datos de Prueba (NO SON LOS REALES QUE VAN A IR ***)
 
--- Insertar datos en socios.categoriaMembresiaSocio ***
-INSERT INTO socios.categoriaSocio (tipo, costoMembresia, estadoCategoriaSocio) VALUES
-('Menor', 50.00, 1),
-('Cadete', 80.00, 1),
-('Mayor', 120.00, 1);
-GO
-
--- Insertar datos en actividades.deporteDisponible ***
-INSERT INTO actividades.deporteDisponible (descripcion, tipo, costoPorMes) VALUES
-('Futsal', 'Equipo', 30.00),
-('Natacion', 'Individual', 40.00),
-('Spinning', 'Clase', 25.00),
-('Yoga', 'Clase', 35.00);
-GO
-
 -- Insertar datos en socios.socio ***
 INSERT INTO socios.socio (idSocio, categoriaSocio, dni, cuil, nombre, apellido, email, telefono, fechaNacimiento, fechaDeVigenciaContrasenia, fechaIngresoSocio, contactoDeEmergencia, usuario, contrasenia, estadoMembresia, fechaVencimientoMembresia, direccion) VALUES
 (4148, 1, '12345678', '20123456789', 'Juan', 'Perez', 'juan.p@email.com', '1122334455', '1990-01-15', '2025-12-31', '2020-05-01', '1166778899', 'juanp', 'pass123', 'Activo', '2025-07-31', 'Calle Falsa 123'),
@@ -40,10 +25,328 @@ INSERT INTO actividades.deporteActivo (idSocio, idDeporte, estadoActividadDeport
 GO
 
 -- ************************************************************************************************
+-- Procedimiento: socios.importarCategoriasSocio
+-- Descripción: Este procedimiento se encarga de importar y sincronizar las categorías de membresía de socios desde un archivo CSV.
+-- Parámetros:
+--   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene los datos de las categorías de socio.
+-- ************************************************************************************************
+CREATE OR ALTER PROCEDURE socios.importarCategoriasSocio
+    @FilePath NVARCHAR(255) -- Parámetro para la ruta del archivo CSV
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- Declaramos una variable para construir la consulta de BULK INSERT dinámicamente
+    DECLARE @consultaSqlDinamica NVARCHAR(MAX);
+    IF OBJECT_ID('tempdb..#StagingCategoriasSocio') IS NOT NULL
+        DROP TABLE #StagingCategoriasSocio;
+    -- Creamos la tabla temporal. Las columnas aquí deben coincidir
+    CREATE TABLE #StagingCategoriasSocio (
+        CategoriaSocioCsv NVARCHAR(15),      -- Corresponde a 'Categoria socio' del CSV
+        ValorCuotaCsv DECIMAL(10, 2),       -- Corresponde a 'Valor cuota' del CSV
+        VigenteHastaCsv NVARCHAR(20)        -- Corresponde a 'Vigente hasta' del CSV (NVARCHAR(20) para mayor seguridad)
+    );
+    -- Manejo de errores: Si algo sale mal, capturamos el error
+    BEGIN TRY
+        -- Construimos la sentencia BULK INSERT de forma dinámica.
+        SET @consultaSqlDinamica = N'BULK INSERT #StagingCategoriasSocio
+                                     FROM ''' + @FilePath + N'''
+                                     WITH
+                                     (
+                                         FIRSTROW = 2,           -- Empezamos a leer desde la segunda fila (ignoramos el encabezado)
+                                         FIELDTERMINATOR = '';'',  -- *** IMPORTANTE: Usa punto y coma (;) como delimitador ***
+                                         ROWTERMINATOR = ''0x0a'', -- El final de cada fila se identifica con un salto de línea (LF).
+                                                                  -- Si tu CSV fuera de Windows, podría ser ''0x0d0a'' (CRLF).
+                                         TABLOCK                  -- Ayuda a optimizar la carga masiva bloqueando la tabla temporal
+                                     );';
+        
+        -- Ejecutamos la consulta BULK INSERT que acabamos de construir
+        EXEC sp_executesql @consultaSqlDinamica;
+        -- MERGE nos permite insertar nuevas filas o actualizar existentes en un solo paso.
+        MERGE socios.categoriaMembresiaSocio AS TablaDestino -- Nuestra tabla final donde queremos los datos
+        USING (
+            -- Realizamos las transformaciones necesarias desde los datos del CSV.
+            SELECT
+                st.CategoriaSocioCsv AS TipoCategoria,
+                st.ValorCuotaCsv AS CostoMembresia,
+                ISNULL(TRY_CONVERT(DATE, st.VigenteHastaCsv, 103), '2025-05-31') AS VigenciaHasta,
+                -- Si el CSV no la provee, usaremos ese valor por defecto.
+                1 AS EstadoCategoria -- Asumimos que las categorías importadas están activas
+            FROM
+                #StagingCategoriasSocio st
+        ) AS TablaOrigen (tipo, costoMembresia, vigenciaHasta, estadoCategoriaSocio)
+        -- Definimos las condiciones para saber si una fila ya existe en la tabla destino.
+        -- En este caso, la clave de negocio para una categoría es su 'tipo'.
+        ON (TablaDestino.tipo = TablaOrigen.tipo)
+        -- Si la fila ya existe en la tabla destino (coincide por el 'tipo' de categoría)
+        WHEN MATCHED THEN
+            UPDATE SET
+                TablaDestino.costoMembresia = TablaOrigen.costoMembresia,
+                TablaDestino.vigenciaHasta = TablaOrigen.vigenciaHasta,
+                TablaDestino.estadoCategoriaSocio = TablaOrigen.estadoCategoriaSocio
+        -- Si la fila NO existe en la tabla destino (es una nueva categoría)
+        WHEN NOT MATCHED THEN
+            INSERT (tipo, costoMembresia, vigenciaHasta, estadoCategoriaSocio)
+            VALUES (TablaOrigen.tipo, TablaOrigen.costoMembresia, TablaOrigen.vigenciaHasta, TablaOrigen.estadoCategoriaSocio);
+        -- Mensaje de éxito al usuario
+        PRINT '¡Proceso de importación de categorías de socio completado con éxito!';
+    END TRY
+    BEGIN CATCH
+        DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
+        DECLARE @SeveridadError INT = ERROR_SEVERITY();
+        DECLARE @EstadoError INT = ERROR_STATE();
+        -- Lanzamos el error capturado
+        RAISERROR(@MensajeError, @SeveridadError, @EstadoError);
+    END CATCH;
+    -- Al finalizar, eliminamos la tabla temporal para liberar recursos
+    IF OBJECT_ID('tempdb..#StagingCategoriasSocio') IS NOT NULL
+        DROP TABLE #StagingCategoriasSocio;
+END;
+GO
+
+-- CARGAR DATOS DEL CSV
+EXEC socios.importarCategoriasSocio @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasCategoriaSocio.csv';
+GO
+
+-- VER DATOS CARGADOS
+SELECT * FROM socios.categoriaMembresiaSocio;
+GO
+
+-- ************************************************************************************************
+-- Procedimiento: actividades.importarDeportesDisponibles
+-- Descripción: Este procedimiento se encarga de importar y sincronizar los deportes disponibles desde un archivo CSV.         
+-- Parámetros:
+--   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene los datos.
+-- ************************************************************************************************
+CREATE OR ALTER PROCEDURE actividades.importarDeportesDisponibles
+    @FilePath NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- Declaramos una variable para construir la consulta de BULK INSERT dinámicamente
+    DECLARE @consultaSqlDinamica NVARCHAR(MAX);
+    IF OBJECT_ID('tempdb..#StagingDeportesDisponibles') IS NOT NULL
+        DROP TABLE #StagingDeportesDisponibles;
+    -- Creamos la tabla temporal. Las columnas aquí deben coincidir
+    CREATE TABLE #StagingDeportesDisponibles (
+        ActividadCsv NVARCHAR(50),          -- Corresponde a 'Actividad' del CSV
+        ValorPorMesCsv DECIMAL(10, 2),      -- Corresponde a 'Valor por mes' del CSV
+        VigenteHastaCsv NVARCHAR(20)        -- Corresponde a 'Vigente hasta' del CSV (NVARCHAR(20) para mayor seguridad)
+    );
+    -- Manejo de errores: Si algo sale mal, capturamos el error
+    BEGIN TRY
+        SET @consultaSqlDinamica = N'BULK INSERT #StagingDeportesDisponibles
+                                     FROM ''' + @FilePath + N'''
+                                     WITH
+                                     (
+                                         FIRSTROW = 2,             -- Empezamos a leer desde la segunda fila (ignoramos el encabezado)
+                                         FIELDTERMINATOR = '';'',  -- *** IMPORTANTE: Usa punto y coma (;) como delimitador ***
+                                         ROWTERMINATOR = ''0x0a'', -- El final de cada fila se identifica con un salto de línea (LF).                             
+                                         TABLOCK                   -- Ayuda a optimizar la carga masiva bloqueando la tabla temporal
+                                     );';
+     
+        -- Ejecutamos la consulta BULK INSERT que acabamos de construir
+        EXEC sp_executesql @consultaSqlDinamica;
+        -- MERGE nos permite insertar nuevos deportes o actualizar existentes en un solo paso.
+        MERGE actividades.deporteDisponible AS TablaDestino -- Nuestra tabla final donde queremos los datos
+        USING (
+            -- Preparamos los datos de ORIGEN para la sincronización.
+            SELECT
+                st.ActividadCsv AS DescripcionDeporte,
+                st.ValorPorMesCsv AS CostoMensual,
+                -- Usamos TRY_CONVERT para manejar posibles errores de formato de fecha.
+                ISNULL(TRY_CONVERT(DATE, st.VigenteHastaCsv, 103), '2025-05-31') AS VigenciaHastaDeporte
+            FROM
+                #StagingDeportesDisponibles st -- Los datos que recién cargamos del CSV
+        ) AS TablaOrigen (descripcion, costoPorMes, vigenciaHasta)
+        -- Definimos las condiciones para saber si un deporte ya existe en la tabla destino.
+        -- En este caso, la clave de negocio para un deporte es su 'descripcion'.
+        ON (TablaDestino.descripcion = TablaOrigen.descripcion)
+        -- Si la fila ya existe en la tabla destino (coincide por la 'descripcion' del deporte)
+        WHEN MATCHED THEN
+            UPDATE SET
+                TablaDestino.costoPorMes = TablaOrigen.costoPorMes,
+                TablaDestino.vigenciaHasta = TablaOrigen.vigenciaHasta
+        -- Si la fila NO existe en la tabla destino (es un nuevo deporte)
+        WHEN NOT MATCHED THEN
+            INSERT (descripcion, costoPorMes, vigenciaHasta)
+            VALUES (TablaOrigen.descripcion, TablaOrigen.costoPorMes, TablaOrigen.vigenciaHasta);
+        -- Mensaje de éxito al usuario
+        PRINT 'Proceso de importacion de deportes disponibles completado con exito!';
+    END TRY
+    BEGIN CATCH
+        DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
+        DECLARE @SeveridadError INT = ERROR_SEVERITY();
+        DECLARE @EstadoError INT = ERROR_STATE();
+        -- Lanzamos el error capturado 
+        RAISERROR(@MensajeError, @SeveridadError, @EstadoError);
+    END CATCH;
+    IF OBJECT_ID('tempdb..#StagingDeportesDisponibles') IS NOT NULL
+        DROP TABLE #StagingDeportesDisponibles;
+END;
+GO
+
+-- CARGAR DATOS DEL CSV
+EXEC actividades.importarDeportesDisponibles @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividades.csv';
+GO
+
+-- VER DATOS CARGADOS
+SELECT * FROM actividades.deporteDisponible;
+GO
+
+-- ************************************************************************************************
+-- Procedimiento: actividades.importarDeportesPileta
+-- Descripción: Este procedimiento se encarga de importar y sincronizar las tarifas y horarios
+--              de la actividad de pileta desde un archivo CSV con una estructura compleja.
+--              Transforma los datos de múltiples filas del CSV en una única fila en la tabla 'actividades.actividadPileta'.
+-- Parámetros:
+--   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene las tarifas de pileta.
+-- ************************************************************************************************
+CREATE OR ALTER PROCEDURE actividades.importarDeportesPileta
+    @FilePath NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @DefaultTariffValue DECIMAL(10, 2) = 0.01;  -- Valor por defecto para tarifas ausentes o inválidas
+    DECLARE @DefaultApertura TIME = '10:00:00';			-- Hora de apertura por defecto (10 AM)
+    DECLARE @DefaultCierre TIME = '20:00:00';		    -- Hora de cierre por defecto (8 PM)
+    DECLARE @consultaSqlDinamica NVARCHAR(MAX);
+    -- Si ya existe una tabla temporal, la eliminamos
+    IF OBJECT_ID('tempdb..#StagingPiletaActividad') IS NOT NULL
+        DROP TABLE #StagingPiletaActividad;
+    -- Creamos la tabla temporal con las mismas columnas del CSV:
+    CREATE TABLE #StagingPiletaActividad (
+        TipoValorCsv NVARCHAR(50),
+        TipoPersonaCsv NVARCHAR(50),
+        TarifaSocioCsv NVARCHAR(50),      -- Para manejar "," como decimal o vacíos
+        TarifaInvitadoCsv NVARCHAR(50),   -- Para manejar "," como decimal o vacíos
+        VigenciaHastaCsv NVARCHAR(20)
+    );
+    -- Manejo de errores
+    BEGIN TRY
+        -- Construimos la sentencia BULK INSERT de forma dinámica
+        SET @consultaSqlDinamica = N'BULK INSERT #StagingPiletaActividad
+                                     FROM ''' + @FilePath + N'''
+                                     WITH
+                                     (
+                                         FIRSTROW = 2,             -- Ignoramos la fila de encabezado
+                                         FIELDTERMINATOR = '';'',  -- *** IMPORTANTE: Usa punto y coma (;) ***
+                                         ROWTERMINATOR = ''0x0a'', -- O ''0x0d0a''
+                                         TABLOCK                  
+                                     );';
+        EXEC sp_executesql @consultaSqlDinamica;
+        -- Usamos MERGE para insertar o actualizar el único registro de tarifas de pileta.
+        -- Asumimos que la tabla 'actividades.actividadPileta' contendrá un único registro
+        -- con ID 1 para las tarifas generales de la pileta.
+        MERGE actividades.actividadPileta AS Target
+        USING (
+            -- Subconsulta para pivotar los datos y obtener todas las tarifas en una sola fila
+            SELECT
+                -- Tarifas Socio por Día (usando @DefaultTariffValue si la conversión falla)
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor del dia' AND TipoPersonaCsv = 'Adultos' THEN TRY_CAST(REPLACE(TarifaSocioCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaSocioPorDiaAdulto,
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor del dia' AND TipoPersonaCsv = 'Menores de 12 años' THEN TRY_CAST(REPLACE(TarifaSocioCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaSocioPorDiaMenor,
+                -- Tarifas Socio por Temporada (usando @DefaultTariffValue si la conversión falla)
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor de temporada' AND TipoPersonaCsv = 'Adultos' THEN TRY_CAST(REPLACE(TarifaSocioCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaSocioPorTemporadaAdulto,
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor de temporada' AND TipoPersonaCsv = 'Menores de 12 años' THEN TRY_CAST(REPLACE(TarifaSocioCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaSocioPorTemporadaMenor,
+                -- Tarifas Socio por Mes (usando @DefaultTariffValue si la conversión falla)
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor del Mes' AND TipoPersonaCsv = 'Adultos' THEN TRY_CAST(REPLACE(TarifaSocioCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaSocioPorMesAdulto,
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor del Mes' AND TipoPersonaCsv = 'Menores de 12 años' THEN TRY_CAST(REPLACE(TarifaSocioCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaSocioPorMesMenor,
+                -- Tarifas Invitado por Día (usando @DefaultTariffValue si la conversión falla)
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor del dia' AND TipoPersonaCsv = 'Adultos' THEN TRY_CAST(REPLACE(TarifaInvitadoCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaInvitadoPorDiaAdulto,
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor del dia' AND TipoPersonaCsv = 'Menores de 12 años' THEN TRY_CAST(REPLACE(TarifaInvitadoCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaInvitadoPorDiaMenor,
+                -- Tarifas Invitado por Temporada (usando @DefaultTariffValue si la conversión falla o valor ausente)
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor de temporada' AND TipoPersonaCsv = 'Adultos' THEN TRY_CAST(REPLACE(TarifaInvitadoCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaInvitadoPorTemporadaAdulto,
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor de temporada' AND TipoPersonaCsv = 'Menores de 12 años' THEN TRY_CAST(REPLACE(TarifaInvitadoCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaInvitadoPorTemporadaMenor,
+                -- Tarifas Invitado por Mes (usando @DefaultTariffValue si la conversión falla o valor ausente)
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor del Mes' AND TipoPersonaCsv = 'Adultos' THEN TRY_CAST(REPLACE(TarifaInvitadoCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaInvitadoPorMesAdulto,
+                ISNULL(MAX(CASE WHEN TipoValorCsv = 'Valor del Mes' AND TipoPersonaCsv = 'Menores de 12 años' THEN TRY_CAST(REPLACE(TarifaInvitadoCsv, ',', '.') AS DECIMAL(10,2)) ELSE NULL END), @DefaultTariffValue) AS TarifaInvitadoPorMesMenor,
+                -- Horarios fijos por defecto
+                @DefaultApertura AS HoraApertura,
+                @DefaultCierre AS HoraCierre,
+                -- Vigencia (se toma la primera fecha encontrada, asumiendo que es la misma para todas las tarifas)
+                MAX(ISNULL(TRY_CONVERT(DATE, VigenciaHastaCsv, 103), '2025-02-28')) AS VigenciaHasta
+            FROM
+                #StagingPiletaActividad
+            GROUP BY () -- Agrupamos por nada para obtener una sola fila de resultados
+        ) AS Source (tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
+                     tarifaSocioPorDiaMenor, tarifaSocioPorTemporadaMenor, tarifaSocioPorMesMenor,
+                     tarifaInvitadoPorDiaAdulto, tarifaInvitadoPorTemporadaAdulto, tarifaInvitadoPorMesAdulto,
+                     tarifaInvitadoPorDiaMenor, tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorMesMenor,
+                     horaAperturaActividad, horaCierreActividad, vigenciaHasta)
+        -- La condición ON para MERGE asume que solo habrá un registro de tarifas de pileta, y lo identificamos por idActividad = 1. Si no existe, se inserta.
+        ON Target.idActividad = 1
+        WHEN MATCHED THEN
+            UPDATE SET
+                Target.tarifaSocioPorDiaAdulto = Source.tarifaSocioPorDiaAdulto,
+                Target.tarifaSocioPorTemporadaAdulto = Source.tarifaSocioPorTemporadaAdulto,
+                Target.tarifaSocioPorMesAdulto = Source.tarifaSocioPorMesAdulto,
+                Target.tarifaSocioPorDiaMenor = Source.tarifaSocioPorDiaMenor,
+                Target.tarifaSocioPorTemporadaMenor = Source.tarifaSocioPorTemporadaMenor,
+                Target.tarifaSocioPorMesMenor = Source.tarifaSocioPorMesMenor,
+                Target.tarifaInvitadoPorDiaAdulto = Source.tarifaInvitadoPorDiaAdulto,
+                Target.tarifaInvitadoPorTemporadaAdulto = Source.tarifaInvitadoPorTemporadaAdulto,
+                Target.tarifaInvitadoPorMesAdulto = Source.tarifaInvitadoPorMesAdulto,
+                Target.tarifaInvitadoPorDiaMenor = Source.tarifaInvitadoPorDiaMenor,
+                Target.tarifaInvitadoPorTemporadaMenor = Source.tarifaInvitadoPorTemporadaMenor,
+                Target.tarifaInvitadoPorMesMenor = Source.tarifaInvitadoPorMesMenor,
+                Target.horaAperturaActividad = Source.horaAperturaActividad,
+                Target.horaCierreActividad = Source.horaCierreActividad,
+                Target.vigenciaHasta = Source.vigenciaHasta
+        WHEN NOT MATCHED THEN
+            INSERT (tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
+                    tarifaSocioPorDiaMenor, tarifaSocioPorTemporadaMenor, tarifaSocioPorMesMenor,
+                    tarifaInvitadoPorDiaAdulto, tarifaInvitadoPorTemporadaAdulto, tarifaInvitadoPorMesAdulto,
+                    tarifaInvitadoPorDiaMenor, tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorMesMenor,
+                    horaAperturaActividad, horaCierreActividad, vigenciaHasta)
+            VALUES (Source.tarifaSocioPorDiaAdulto, Source.tarifaSocioPorTemporadaAdulto, Source.tarifaSocioPorMesAdulto,
+                    Source.tarifaSocioPorDiaMenor, Source.tarifaSocioPorTemporadaMenor, Source.tarifaSocioPorMesMenor,
+                    Source.tarifaInvitadoPorDiaAdulto, Source.tarifaInvitadoPorTemporadaAdulto, Source.tarifaInvitadoPorMesAdulto,
+                    Source.tarifaInvitadoPorDiaMenor, Source.tarifaInvitadoPorTemporadaMenor, Source.tarifaInvitadoPorMesMenor,
+                    Source.horaAperturaActividad, Source.horaCierreActividad, Source.vigenciaHasta);
+        PRINT '¡Tarifas y horarios de actividad de pileta importados/actualizados con éxito!';
+    END TRY
+    BEGIN CATCH
+        -- Manejo de Errores
+        DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
+        DECLARE @SeveridadError INT = ERROR_SEVERITY();
+        DECLARE @EstadoError INT = ERROR_STATE();
+        RAISERROR(@MensajeError, @SeveridadError, @EstadoError);
+    END CATCH;
+    IF OBJECT_ID('tempdb..#StagingPiletaActividad') IS NOT NULL
+        DROP TABLE #StagingPiletaActividad;
+END;
+GO
+
+-- CARGAR DATOS DEL CSV
+EXEC actividades.importarDeportesPileta
+    @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividadesPileta.csv';
+GO
+
+SELECT -- FORMAT(valor, 'C', 'es-AR') para mostrar los valores como moneda local de Argentina
+    idActividad,
+    CASE WHEN tarifaSocioPorDiaAdulto = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaSocioPorDiaAdulto, 'C', 'es-AR') END AS TarifaSocioDiaAdulto,
+    CASE WHEN tarifaSocioPorTemporadaAdulto = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaSocioPorTemporadaAdulto, 'C', 'es-AR') END AS TarifaSocioTemporadaAdulto,
+    CASE WHEN tarifaSocioPorMesAdulto = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaSocioPorMesAdulto, 'C', 'es-AR') END AS TarifaSocioMesAdulto,
+    CASE WHEN tarifaSocioPorDiaMenor = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaSocioPorDiaMenor, 'C', 'es-AR') END AS TarifaSocioDiaMenor,
+    CASE WHEN tarifaSocioPorTemporadaMenor = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaSocioPorTemporadaMenor, 'C', 'es-AR') END AS TarifaSocioTemporadaMenor,
+    CASE WHEN tarifaSocioPorMesMenor = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaSocioPorMesMenor, 'C', 'es-AR') END AS TarifaSocioMesMenor,
+    CASE WHEN tarifaInvitadoPorDiaAdulto = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaInvitadoPorDiaAdulto, 'C', 'es-AR') END AS TarifaInvitadoDiaAdulto,
+    CASE WHEN tarifaInvitadoPorTemporadaAdulto = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaInvitadoPorTemporadaAdulto, 'C', 'es-AR') END AS TarifaInvitadoTemporadaAdulto,
+    CASE WHEN tarifaInvitadoPorMesAdulto = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaInvitadoPorMesAdulto, 'C', 'es-AR') END AS TarifaInvitadoMesAdulto,
+    CASE WHEN tarifaInvitadoPorDiaMenor = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaInvitadoPorDiaMenor, 'C', 'es-AR') END AS TarifaInvitadoDiaMenor,
+    CASE WHEN tarifaInvitadoPorTemporadaMenor = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaInvitadoPorTemporadaMenor, 'C', 'es-AR') END AS TarifaInvitadoTemporadaMenor,
+    CASE WHEN tarifaInvitadoPorMesMenor = 0.01 THEN 'PREGUNTAR EN VENTANILLA' ELSE FORMAT(tarifaInvitadoPorMesMenor, 'C', 'es-AR') END AS TarifaInvitadoMesMenor,
+    horaAperturaActividad,
+    horaCierreActividad,
+    vigenciaHasta
+FROM
+    actividades.actividadPileta;
+GO
+
+-- ************************************************************************************************
 -- Procedimiento: actividades.importarPresentismoActividadSocio
 -- Descripcion: Este procedimiento se encarga de importar los registros de presentismo de las actividades de los socios desde un archivo CSV.
 -- Parametros:
---   @@FilePath NVARCHAR(255): Ruta completa del archivo CSV a importar.
+--   @FilePath NVARCHAR(255): Ruta completa del archivo CSV a importar.
 -- ************************************************************************************************
 CREATE OR ALTER PROCEDURE actividades.importarPresentismoActividadSocio
     @FilePath NVARCHAR(255)
@@ -51,10 +354,8 @@ AS
 BEGIN
     SET NOCOUNT ON;
     DECLARE @consultaSqlDinamica NVARCHAR(MAX);
-    -- Si ya existe una tabla temporal con este nombre de una ejecucion anterior, la eliminamos
     IF OBJECT_ID('tempdb..#TablaDeCargaTemporal') IS NOT NULL
         DROP TABLE #TablaDeCargaTemporal;
-
     -- Es crucial que el numero de columnas aqui coincida con el numero de columnas del CSV, incluyendo las vacias.
     -- (Para este caso identificamos 9 columnas: 5 de datos reales + 4 columnas vacias adicionales)
     CREATE TABLE #TablaDeCargaTemporal (
@@ -89,7 +390,7 @@ BEGIN
             SELECT
                 CAST(REPLACE(st.NumeroDeSocioCsv, 'SN-', '') AS INT) AS idSocioFinal, -- Transformamos el numero de socio (ej. 'SN-4148' a 4148)
                 da.idDeporteActivo,
-                CONVERT(DATE, st.FechaAsistenciaCsv, 103) AS FechaDeAsistenciaFinal, -- Convertimos la fecha del CSV al formato DATE de SQL Server
+                CONVERT(DATE, st.FechaAsistenciaCsv, 103) AS FechaDeAsistenciaFinal,
                 st.EstadoAsistenciaCsv AS EstadoPresentismoFinal,
                 st.ProfesorCsv AS ProfesorAsociado
             FROM
@@ -130,6 +431,7 @@ BEGIN
 END;
 GO
 
+-- CARGAR DATOS DEL CSV
 EXEC actividades.importarPresentismoActividadSocio @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\presentismo_actividades.csv';
 GO
 
