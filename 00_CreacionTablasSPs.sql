@@ -159,29 +159,25 @@ GO
 
 -- 2.1 socios.socio
 CREATE TABLE socios.socio (
-    idSocio INT NOT NULL,
-	categoriaSocio INT NOT NULL,
-    dni varchar(10) NOT NULL,
-    cuil varchar(13) NOT NULL,
-    nombre VARCHAR(10) NOT NULL,
-    apellido VARCHAR(10) NOT NULL,
-    email VARCHAR(25),
-    telefono VARCHAR(14),
-    fechaNacimiento DATE,
-    fechaDeVigenciaContrasenia DATE,
-    contactoDeEmergencia VARCHAR(14),
-    usuario VARCHAR(50) UNIQUE,
-    contrasenia VARCHAR(10),
-    -- saldoAFavor DECIMAL(10, 2) CHECK (saldoAFavor >= 0), GENERAR UNA ENTIDAD DE ESTO
-    direccion VARCHAR(25),
-	CONSTRAINT PK_socio PRIMARY KEY (idSocio),
-	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaMembresiaSocio(idCategoria),
-	FOREIGN KEY (idSocio) REFERENCES socios.ingresoSocio(idSocio)
-);
+    idSocio INT PRIMARY KEY,
+	categoriaSocio INT NOT NULL DEFAULT (1), -- FK a categoriaMembresiaSocio, se usará '1' por defecto
+    nombre VARCHAR(50) NOT NULL,
+    apellido VARCHAR(50) NOT NULL,
+    dni VARCHAR(10) NOT NULL,
+	email VARCHAR(100) NULL,
+    fechaNacimiento DATE NULL,
+    telefonoContacto VARCHAR(20) NULL,
+    telefonoEmergencia VARCHAR(20) NULL,
+    nombreObraSocial VARCHAR(50) NULL,
+    nroSocioObraSocial VARCHAR(50) NULL,
+	usuario VARCHAR(50) NULL,
+    contrasenia VARCHAR(10) NULL,
+    direccion VARCHAR(50) NULL,
+	CONSTRAINT FK_socio_categoria FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaMembresiaSocio(idCategoria)
+    );
 GO
 
 -- 2.2 socios.estadoMembresiaSocio
-
 CREATE TABLE socios.estadoMembresiaSocio (
 	idSocio INT PRIMARY KEY IDENTITY (1,1),
 	tipoCategoriaSocio VARCHAR(15) CHECK (tipoCategoriaSocio in('Cadete', 'Mayor', 'Menor')),
@@ -248,80 +244,69 @@ CREATE TABLE pagos.tarjetaEnUso (
 );
 GO
 
--- 3.4 pagos.facturaActiva
-
+-- 3.5 pagos.facturaActiva
 CREATE TABLE pagos.facturaActiva (
-	idFactura INT PRIMARY KEY IDENTITY (1,1),
-	idSocio INT NOT NULL,
-	categoriaSocio INT NOT NULL,
-	estadoFactura VARCHAR(15) CHECK (estadoFactura IN ('Pendiente', 'Pagada', 'Nulificada')),
-	fechaEmision DATE,
-	fechaPrimerVencimiento DATE,
-	fechaSegundoVencimiento DATE,
-	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
-	FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaMembresiaSocio(idCategoria)
-)
+    idFactura INT PRIMARY KEY IDENTITY (1,1),
+    idSocio INT NOT NULL,
+    categoriaSocio INT NOT NULL,
+    estadoFactura VARCHAR(15) CHECK (estadoFactura IN ('Pendiente', 'Pagada', 'Nulificada')),
+    fechaEmision DATE,
+    fechaPrimerVencimiento DATE,
+    fechaSegundoVencimiento DATE,
+    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
+    FOREIGN KEY (categoriaSocio) REFERENCES socios.categoriaMembresiaSocio(idCategoria)
+);
+GO
 
--- 3.5 pagos.facturaEmitida
+-- 3.6 pagos.facturaEmitida
 CREATE TABLE pagos.facturaEmitida (
     idFactura INT NOT NULL,
-	nombreSocio VARCHAR(10) NOT NULL,
-	apellidoSocio VARCHAR(10) NOT NULL,
-	fechaEmision DATE DEFAULT GETDATE(),
-	cuilDeudor VARCHAR(13) NOT NULL,
-	domicilio VARCHAR(35) NOT NULL,
-	modalidadCobro VARCHAR(8) NOT NULL  CHECK (modalidadCobro IN ('Contado', 'Cuotas:_')),
-	importeBruto DECIMAL(10, 2) NOT NULL CHECK (importeBruto >= 0),
-	importeTotal DECIMAL(10, 2) NOT NULL CHECK (importeTotal >= 0),
-	CONSTRAINT PK_facturaEmitida PRIMARY KEY (idFactura),
-	FOREIGN KEY (idFactura) REFERENCES pagos.facturaActiva(idFactura)
+    nombreSocio VARCHAR(50) NOT NULL,
+    apellidoSocio VARCHAR(50) NOT NULL,
+    fechaEmision DATE DEFAULT GETDATE(),
+    cuilDeudor VARCHAR(13) NOT NULL,
+    domicilio VARCHAR(35) NOT NULL,
+    modalidadCobro VARCHAR(8) NOT NULL CHECK (modalidadCobro IN ('Contado', 'Cuotas:_', 'efectivo', 'Tarjeta')),
+    importeBruto DECIMAL(10, 2) NOT NULL CHECK (importeBruto >= 0),
+    importeTotal DECIMAL(10, 2) NOT NULL CHECK (importeTotal >= 0),
+    CONSTRAINT PK_facturaEmitida PRIMARY KEY (idFactura),
+    FOREIGN KEY (idFactura) REFERENCES pagos.facturaActiva(idFactura)
 );
 GO
 
-CREATE TABLE pagos.cuerpoFactura (
-	idFactura INT NOT NULL,
-	idItemFactura INT NOT NULL,
-	tipoItem VARCHAR(20),
-	descripcionItem VARCHAR(25),
-	importeItem DECIMAL(10,2)
-	CONSTRAINT PK_cuerpoFactura PRIMARY KEY (idFactura, idItemFactura),
-	FOREIGN KEY (idFactura) REFERENCES pagos.facturaEmitida(idFactura)
-);
-GO
-
--- 3.6 pagos.cobroFactura
+-- 3.7 pagos.cobroFactura
 CREATE TABLE pagos.cobroFactura (
-    idCobro INT IDENTITY(1,1),
-    idFacturaCobrada INT,
-    idSocio INT,
+    idCobro BIGINT PRIMARY KEY,
+    idFacturaCobrada INT NULL,
+    idSocio INT, 
     categoriaSocio INT NOT NULL,
     fechaEmisionCobro DATE NOT NULL,
-    nombreSocio VARCHAR(10) NOT NULL,
-    apellidoSocio VARCHAR(10) NOT NULL,
-	cuilDeudor INT NOT NULL,
-	domicilio VARCHAR(20),
+    nombreSocio VARCHAR(50) NOT NULL,
+    apellidoSocio VARCHAR(50) NOT NULL,
+    cuilDeudor VARCHAR(13) NOT NULL, 
+    domicilio VARCHAR(50) NULL,
     modalidadCobro VARCHAR(25) NOT NULL,
-    numeroCuota INT NOT NULL,
+    numeroCuota INT NOT NULL DEFAULT 1, 
     totalAbonado DECIMAL(10, 2) NOT NULL CHECK (totalAbonado >= 0),
-	CONSTRAINT PK_cobroFactura PRIMARY KEY (idCobro, idFacturaCobrada),
-    CONSTRAINT FK_cobroFactura FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
-    FOREIGN KEY (idFacturaCobrada) REFERENCES pagos.facturaEmitida(idFactura)
+    CONSTRAINT FK_cobroFactura_idSocio FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
+    CONSTRAINT FK_cobroFactura_idFacturaCobrada FOREIGN KEY (idFacturaCobrada) REFERENCES pagos.facturaEmitida(idFactura)
 );
 GO
 
-CREATE TABLE pagos.cuerpoCobro(
-	idCobro INT NOT NULL,
-	idFactura INT NOT NULL,
-	idItemCobro INT IDENTITY(1,1),
-	tipoItem VARCHAR(20),
-	despricionItem VARCHAR(25),
-	importeItem DECIMAL(10,2),
-	CONSTRAINT PK_cuerpoCobro PRIMARY KEY (idCobro, idFactura, idItemCobro),
-	FOREIGN KEY (idCobro, idFactura) REFERENCES pagos.cobroFactura(idCobro,idFacturaCobrada)
+-- 3.8 pagos.cuerpoCobro
+CREATE TABLE pagos.cuerpoCobro (
+    idCobro BIGINT NOT NULL,
+    idFactura INT NOT NULL, -- Asumo que esto se refiere a idFacturaCobrada en cobroFactura
+    idItemCobro INT IDENTITY(1,1),
+    tipoItem VARCHAR(20),
+    despricionItem VARCHAR(25),
+    importeItem DECIMAL(10,2),
+    CONSTRAINT PK_cuerpoCobro PRIMARY KEY (idCobro, idFactura, idItemCobro),
+    CONSTRAINT FK_cuerpoCobro_cobroFactura FOREIGN KEY (idCobro) REFERENCES pagos.cobroFactura(idCobro)
 );
 GO
 
--- 3.7 descuentos.descuentoVigente
+-- 3.9 descuentos.descuentoVigente
 CREATE TABLE descuentos.descuentoVigente (
     idDescuento INT,
     idSocio INT,
@@ -331,7 +316,7 @@ CREATE TABLE descuentos.descuentoVigente (
 );
 GO
 
--- 3.8 itinerarios.itinerario
+-- 3.10 itinerarios.itinerario
 CREATE TABLE itinerarios.itinerario (
     idItinerario INT PRIMARY KEY IDENTITY(1,1),
     dia VARCHAR(9) NOT NULL,
@@ -342,7 +327,7 @@ CREATE TABLE itinerarios.itinerario (
 );
 GO
 
--- 3.9 coberturas.prepagaEnUso
+-- 3.11 coberturas.prepagaEnUso
 CREATE TABLE coberturas.prepagaEnUso (
     idPrepaga INT PRIMARY KEY IDENTITY(1,1),
     idCobertura INT NOT NULL,
@@ -354,7 +339,7 @@ CREATE TABLE coberturas.prepagaEnUso (
 );
 GO
 
--- 3.10 reservas.reservaSum 
+-- 3.12 reservas.reservaSum 
 CREATE TABLE reservas.reservaSUM (
 	idReserva INT IDENTITY(1,1),
 	idSocio INT NOT NULL CHECK (idSocio >= 0), -- Porque si no es socio y es Invitado, iria 0
@@ -370,7 +355,7 @@ CREATE TABLE reservas.reservaSUM (
 );
 GO
 
--- 3.11 reservas.reservaPaseActividad
+-- 3.13 reservas.reservaPaseActividad
 CREATE TABLE reservas.reservaPaseActividad (
 	idReservaActividad INT IDENTITY (1,1),
 	idSocio INT NOT NULL CHECK (idSocio >= 0), -- Porque si no es socio y es Invitado, iria 0
@@ -382,23 +367,24 @@ CREATE TABLE reservas.reservaPaseActividad (
 );
 GO
 
--- 3.12 pagos.reembolso
+-- 3.14 pagos.reembolso
 CREATE TABLE pagos.reembolso (
     idFacturaReembolso INT NOT NULL IDENTITY(1,1),
     idCobroOriginal INT NOT NULL,
-	idFacturaOriginal INT NOT NULL,
+    idFacturaOriginal INT NOT NULL,
     idSocioDestinatario INT NOT NULL,
     montoReembolsado DECIMAL(10, 2) NOT NULL CHECK (montoReembolsado > 0),
-    cuilDestinatario BIGINT NOT NULL CHECK (cuilDestinatario > 0), -- Corregido de 'cuitDestinatario' a 'cuilDestinatario'
+    cuilDestinatario BIGINT NOT NULL CHECK (cuilDestinatario > 0),
     medioDePagoUsado VARCHAR(50) NOT NULL,
     razonReembolso VARCHAR(50) NOT NULL,
     CONSTRAINT PK_reembolso PRIMARY KEY (idFacturaReembolso, idCobroOriginal),
-    FOREIGN KEY (idCobroOriginal, idFacturaOriginal) REFERENCES pagos.cobroFactura(idCobro, idFacturaCobrada),
+    CONSTRAINT FK_reembolso_idCobroOriginal FOREIGN KEY (idCobroOriginal) REFERENCES pagos.cobroFactura(idCobro), -- FK ajustada
+    FOREIGN KEY (idFacturaOriginal) REFERENCES pagos.facturaEmitida(idFactura), -- Mantenida, pero puede ser problemática si idFacturaCobrada en cobroFactura es NULL
     FOREIGN KEY (idSocioDestinatario) REFERENCES socios.socio(idSocio)
 );
 GO
 
--- 3.14 actividades.presentismoActividadSocio
+-- 3.15 actividades.presentismoActividadSocio
 CREATE TABLE actividades.presentismoActividadSocio (
     idSocio INT NOT NULL,
     idDeporteActivo INT NOT NULL,
