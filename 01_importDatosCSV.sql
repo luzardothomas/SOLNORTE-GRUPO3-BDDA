@@ -2,6 +2,18 @@
 USE Com2900G03;
 GO
 
+ALTER AUTHORIZATION 
+  ON DATABASE::Com2900G03 
+  TO sa;
+GO
+
+ALTER DATABASE Com2900G03 SET TRUSTWORTHY ON;
+GO
+
+EXEC sp_addsrvrolemember 
+    @loginame = N'MicrosoftAccount\santiagocodina@live.com.ar',
+    @rolename = N'bulkadmin';
+
 -- Datos de Prueba (NO SON LOS REALES QUE VAN A IR ***)
 
 -- Insertar datos en socios.socio ***
@@ -30,8 +42,8 @@ GO
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV de datos del grupo familiar.
 -- ************************************************************************************************
-CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar -- REVISAR BIEN EL PORQUE NO ANDA (PARECE SER UN ERROR DE BLOQUEOS O PERMISOS PERO NO LO ENCUENTRO)
-    @FilePath NVARCHAR(255)
+CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar --REVISAR BIEN EL PORQUE NO ANDA (PARECE SER UN ERROR DE BLOQUEOS O PERMISOS PERO NO LO ENCUENTRO)
+    @FilePath NVARCHAR(255) WITH EXECUTE AS OWNER
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -67,6 +79,8 @@ BEGIN
                                          ROWTERMINATOR = ''0x0d0a'',
 										 TABLOCK
                                      );'; 
+		PRINT 'Usuario actual: ' + SYSTEM_USER;
+		PRINT 'Login actual: ' + ORIGINAL_LOGIN();
         EXEC sp_executesql @consultaSqlDinamica;
         -- MERGE nos permite insertar nuevas filas o actualizar existentes en un solo paso.
         MERGE socios.grupoFamiliar AS Target
@@ -131,10 +145,19 @@ BEGIN
 END;
 GO
 
+
 -- CARGAR DATOS DEL CSV
 EXEC socios.importarGrupoFamiliar
-	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\grupoFamiliar.csv';
+	@FilePath = 'C:\Importar\dataImport\grupoFamiliar.csv';
 GO
+
+SELECT 
+  rp.name AS RoleName, 
+  mp.name AS MemberName 
+FROM sys.server_role_members m
+JOIN sys.server_principals rp ON m.role_principal_id = rp.principal_id
+JOIN sys.server_principals mp ON m.member_principal_id = mp.principal_id
+WHERE rp.name = 'bulkadmin';
 
 -- VER DATOS CARGADOS
 SELECT * FROM socios.grupoFamiliar;
@@ -220,7 +243,7 @@ END;
 GO
 
 -- CARGAR DATOS DEL CSV
-EXEC socios.importarCategoriasSocio @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasCategoriaSocio.csv';
+EXEC socios.importarCategoriasSocio @FilePath = 'C:\Importar\dataImport\tarifasCategoriaSocio.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -302,7 +325,7 @@ END;
 GO
 
 -- CARGAR DATOS DEL CSV
-EXEC actividades.importarDeportesDisponibles @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividades.csv';
+EXEC actividades.importarDeportesDisponibles @FilePath = 'C:\Importar\dataImport\tarifasActividades.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -318,7 +341,7 @@ GO
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene las tarifas de pileta.
 -- ************************************************************************************************
 CREATE OR ALTER PROCEDURE actividades.importarDeportesPileta
-    @FilePath NVARCHAR(255)
+    @FilePath NVARCHAR(255) WITH EXECUTE AS OWNER
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -500,7 +523,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarDeportesPileta
-    @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividadesPileta.csv';
+    @FilePath = 'C:\Importar\dataImport\tarifasActividadesPileta.csv';
 GO
 
 SELECT -- FORMAT(valor, 'C', 'es-AR') para mostrar los valores como moneda local de Argentina
