@@ -11,7 +11,7 @@ ALTER DATABASE Com2900G03 SET TRUSTWORTHY ON;
 GO
 
 EXEC sp_addsrvrolemember 
-    @loginame = N'MicrosoftAccount\santiagocodina@live.com.ar',
+    @loginame = N'MSSQL$SQLEXPRESS',
     @rolename = N'bulkadmin';
 
 -- Datos de Prueba (NO SON LOS REALES QUE VAN A IR ***)
@@ -731,7 +731,7 @@ END;
 GO
 
 -- CARGAR DATOS DEL CSV
-EXEC actividades.importarPresentismoActividadSocio @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\presentismo_actividades.csv';
+EXEC actividades.importarPresentismoActividadSocio @FilePath = 'C:\Importar\dataImport\presentismo_actividades.csv';
 GO
 
 -- VER DATOS CARGADOS

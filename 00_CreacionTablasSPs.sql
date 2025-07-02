@@ -6,7 +6,6 @@
 --   - Codina, Santiago Ivan - 44.391.352
 --   - Santillan, Lautaro Ezequiel - 45.175.053
 ----------------------------------------------------------------------------------------------------
-
 -- Crear la base de datos
 CREATE DATABASE Com2900G03;
 GO
@@ -649,9 +648,11 @@ BEGIN
 END
 GO
 
-/*IF NOT EXISTS (SELECT 1 FROM socios.categoriaMembresiaSocio WHERE tipo = 'Cadete')
+DECLARE @fechaingreso DATE
+SET @fechaingreso= DATEADD(MONTH, 3, GETDATE())
+IF NOT EXISTS (SELECT 1 FROM socios.categoriaMembresiaSocio WHERE tipo = 'Cadete')
 BEGIN
-  INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia)
+  INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia, @fechaingreso)
   VALUES ('Cadete', 100.00);
 END
 
@@ -680,7 +681,6 @@ END TRY
 BEGIN CATCH
     PRINT 'ERROR: ' + ERROR_MESSAGE();
 END CATCH;
-select * from socios.ingresoSocio
 
 PRINT '--- Caso 2: DNI inválido ---';
 BEGIN TRY
@@ -719,8 +719,7 @@ END TRY
 BEGIN CATCH
     PRINT 'ERROR: ' + ERROR_MESSAGE();
 END CATCH;
-
-GO*/
+GO
 
 CREATE OR ALTER PROCEDURE socios.actualizarSocio
   @idSocio                  INT,
@@ -1806,7 +1805,6 @@ WHERE idFactura = @idFacturaCobrada;
     RAISERROR('Socio %d / categoría %d no encontrado.',16,1,@idSocio,@categoriaSocio);
     RETURN;
   END
-
   -- 3) Calcular número de cuotas
   SET @numCuotas = TRY_CAST(SUBSTRING(@modalidad, CHARINDEX(':', @modalidad) + 1, 10) AS INT);
   IF @numCuotas IS NULL OR @numCuotas <= 0

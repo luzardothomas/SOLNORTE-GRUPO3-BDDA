@@ -20,30 +20,38 @@ CREATE OR ALTER PROCEDURE reporte_morososRecurrentes
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT
-        s.idSocio AS 'Nro de Socio',
-        s.nombre AS 'Nombre',
-        s.apellido AS 'Apellido',
-        DATENAME(month, ems.fechaVencimientoMembresia) AS 'Mes Incumplido',
-        YEAR(ems.fechaVencimientoMembresia) AS 'Año Incumplido',
-        COUNT(*) OVER (PARTITION BY s.idSocio) AS 'Ranking Morosidad'
-    FROM
-        socios.socio s
-    INNER JOIN
-        socios.estadoMembresiaSocio ems ON s.idSocio = ems.idSocio
-    WHERE
-        ems.estadoMorosidadMembresia IN ('Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')
-        AND ems.fechaVencimientoMembresia >= @FechaInicio
-        AND ems.fechaVencimientoMembresia <= @FechaFin
-    QUALIFY -- Utilizando QUALIFY para filtrar por la Window Function
-        COUNT(*) OVER (PARTITION BY s.idSocio) > 2
-    ORDER BY
-        'Ranking Morosidad' DESC; -- Ordenado de Mayor a menor por ranking de morosidad
+    
+    WITH MorososCTE AS (
+        SELECT
+            s.idSocio AS 'Nro de Socio',
+            s.nombre AS 'Nombre',
+            s.apellido AS 'Apellido',
+            DATENAME(month, ems.fechaVencimientoMembresia) AS 'Mes Incumplido',
+            YEAR(ems.fechaVencimientoMembresia) AS 'Año Incumplido',
+            COUNT(*) OVER (PARTITION BY s.idSocio) AS 'Ranking Morosidad'
+        FROM
+            socios.socio s
+        INNER JOIN
+            socios.estadoMembresiaSocio ems ON s.idSocio = ems.idSocio
+        WHERE
+            ems.estadoMorosidadMembresia IN ('Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')
+            AND ems.fechaVencimientoMembresia BETWEEN @FechaInicio AND @FechaFin
+    )
+    SELECT 
+        [Nro de Socio],
+        [Nombre],
+        [Apellido],
+        [Mes Incumplido],
+        [Año Incumplido],
+        [Ranking Morosidad]
+    FROM MorososCTE
+    WHERE [Ranking Morosidad] > 2
+    ORDER BY [Ranking Morosidad] DESC;
 END;
 GO
-
 -- Ejemplo de Ejecución:
 EXEC reporte_morososRecurrentes @FechaInicio = '2024-01-01', @FechaFin = '2024-12-31';
+GO;
 
 -- =============================================
 -- Reporte 2: Acumulado Mensual de Ingresos por Actividad Deportiva
@@ -57,19 +65,18 @@ BEGIN
     SELECT
         FORMAT(cf.fechaEmision, 'yyyy-MM') AS 'Año-Mes',
         DATENAME(month, cf.fechaEmision) AS 'Mes',
-        -- Asumo que descripcionItem de cuerpoFactura puede ser mapeado a una actividad
         ISNULL(df.descripcion, 'Otros/Desconocido') AS 'Actividad Deportiva',
         SUM(cuerpo.importeItem) AS 'Ingreso Mensual Acumulado'
     FROM
-        pagos.facturaEmitida cf
+        pagos.facturaActiva cf -- CORRECCIÓN: Usar tabla que contiene estadoFactura
     INNER JOIN
         pagos.cuerpoFactura cuerpo ON cf.idFactura = cuerpo.idFactura
-    LEFT JOIN -- LEFT JOIN en caso de que no todo item sea de un deporte disponible
+    LEFT JOIN
         actividades.deporteDisponible df ON cuerpo.descripcionItem = df.descripcion
     WHERE
         YEAR(cf.fechaEmision) = @AnioActual
         AND MONTH(cf.fechaEmision) >= 1 -- Desde enero
-        AND cf.estadoFactura = 'Pagada'
+        AND cf.estadoFactura = 'Pagada' -- Ahora disponible en facturaActiva
     GROUP BY
         FORMAT(cf.fechaEmision, 'yyyy-MM'),
         DATENAME(month, cf.fechaEmision),
@@ -82,7 +89,9 @@ GO
 
 -- Ejemplo de Ejecución:
 EXEC reporte_ingresosPorActividadMensual @AnioActual = 2024; -- Para el año 2024
+GO;
 EXEC reporte_ingresosPorActividadMensual; -- Para el año actual
+GO;
 
 -- =============================================
 -- Reporte 3: Socios con Actividad Alternada (Inasistencias)
