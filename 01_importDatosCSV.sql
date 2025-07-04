@@ -2,18 +2,6 @@
 USE Com2900G03;
 GO
 
-ALTER AUTHORIZATION 
-  ON DATABASE::Com2900G03 
-  TO sa;
-GO
-
-ALTER DATABASE Com2900G03 SET TRUSTWORTHY ON;
-GO
-
-EXEC sp_addsrvrolemember 
-    @loginame = N'MSSQL$SQLEXPRESS',
-    @rolename = N'bulkadmin';
-
 -- Datos de Prueba (NO SON LOS REALES QUE VAN A IR ***)
 
 -- Insertar datos en socios.socio ***
@@ -37,7 +25,7 @@ INSERT INTO actividades.deporteActivo (idSocio, idDeporte, estadoActividadDeport
 GO
 
 -- ************************************************************************************************
--- Procedimiento: socios.importarGrupoFamiliar
+-- Procedimiento: socios.importarGrupoFamiliar (4° ejecutar)
 -- Descripción: Este procedimiento se encarga de importar y sincronizar los datos de los miembros individuales del grupo familiar desde un archivo CSV.
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV de datos del grupo familiar.
@@ -163,8 +151,141 @@ WHERE rp.name = 'bulkadmin';
 SELECT * FROM socios.grupoFamiliar;
 GO
 
+-- ========================================================================
+-- Procedimiento: pagos.importarPagosCuotas (5° ejecutar)
+-- Descripción: Importa datos de pagos de cuotas desde "pagoCuotas.csv" a la tabla 'pagos.cobroFactura'.
+-- Parámetros:
+--   @FilePath NVARCHAR(255): Ruta completa del archivo CSV,
+-- ========================================================================
+CREATE OR ALTER PROCEDURE pagos.importarPagosCuotas
+    @FilePath NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @DynamicSql NVARCHAR(MAX);
+    IF OBJECT_ID('tempdb..#StagingPagosCuotas') IS NOT NULL
+        DROP TABLE #StagingPagosCuotas;
+    
+    CREATE TABLE #StagingPagosCuotas (
+        IdDePagoCsv NVARCHAR(50),
+        FechaCsv NVARCHAR(50),
+        ResponsableDePagoCsv NVARCHAR(50), -- SN-XXXX
+        ValorCsv NVARCHAR(50),
+        MedioDePagoCsv NVARCHAR(50)
+    );
+
+    BEGIN TRY
+        SET @DynamicSql = N'BULK INSERT #StagingPagosCuotas
+                             FROM ''' + @FilePath + N'''
+                             WITH
+                             (
+                                 FIRSTROW = 2, -- Omitir encabezados
+                                 FIELDTERMINATOR = '';'', -- Separador de columnas
+                                 ROWTERMINATOR = ''0x0d0a'', -- CRLF para Windows
+                                 TABLOCK                  
+                             );';
+        
+        EXEC sp_executesql @DynamicSql;
+        IF OBJECT_ID('tempdb..#ProcessedCobros') IS NOT NULL
+            DROP TABLE #ProcessedCobros;
+
+        CREATE TABLE #ProcessedCobros (
+            idCobro BIGINT PRIMARY KEY, -- Corregido a BIGINT
+            idSocio INT,
+            categoriaSocio INT,
+            fechaEmisionCobro DATE,
+            nombreSocio VARCHAR(50),
+            apellidoSocio VARCHAR(50),
+            cuilDeudor VARCHAR(13),
+            domicilio VARCHAR(50),
+            modalidadCobro VARCHAR(25),
+            numeroCuota INT,
+            totalAbonado DECIMAL(10, 2)
+        );
+        INSERT INTO #ProcessedCobros (
+            idCobro, idSocio, categoriaSocio, fechaEmisionCobro, 
+            nombreSocio, apellidoSocio, cuilDeudor, domicilio, 
+            modalidadCobro, numeroCuota, totalAbonado
+        )
+        SELECT
+            -- Validar y convertir IdDePagoCsv a BIGINT
+            CASE WHEN ISNUMERIC(sp.IdDePagoCsv) = 1 THEN CAST(sp.IdDePagoCsv AS BIGINT) ELSE NULL END AS idCobro, -- Corregido a BIGINT
+            -- Extraer el número de socio (ej. SN-4001 -> 4001)
+            CAST(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv)) AS INT) AS idSocio,
+            s.categoriaSocio, -- Obtener la categoría del socio de la tabla socios.socio
+            -- Convertir fecha (D/M/YYYY) a DATE
+            CASE WHEN ISDATE(REPLACE(sp.FechaCsv, '/', '-')) = 1 THEN CONVERT(DATE, sp.FechaCsv, 103) ELSE NULL END AS fechaEmisionCobro,
+            s.nombre AS nombreSocio,
+            s.apellido AS apellidoSocio,
+            s.dni AS cuilDeudor, -- Usar DNI del socio como CUIL (asumiendo que es el CUIL)
+            s.direccion AS domicilio, -- Obtener domicilio del socio
+            TRIM(sp.MedioDePagoCsv) AS modalidadCobro, -- Usar el valor directo del CSV
+            1 AS numeroCuota, -- Valor por defecto, ya que el CSV no lo proporciona
+            -- Validar y convertir ValorCsv a DECIMAL
+            CASE WHEN ISNUMERIC(sp.ValorCsv) = 1 THEN CAST(sp.ValorCsv AS DECIMAL(10,2)) ELSE 0.00 END AS totalAbonado
+        FROM
+            #StagingPagosCuotas sp
+        INNER JOIN
+            socios.socio s ON CAST(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv)) AS INT) = s.idSocio
+        WHERE
+            -- Filtrar solo registros donde el ID de pago, ID de socio y valor sean válidos numéricamente
+            ISNUMERIC(sp.IdDePagoCsv) = 1
+            AND ISNUMERIC(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv))) = 1
+            AND ISNUMERIC(sp.ValorCsv) = 1;
+
+        MERGE pagos.cobroFactura AS Target
+        USING #ProcessedCobros AS Source
+        ON (Target.idCobro = Source.idCobro)
+        WHEN MATCHED THEN
+            UPDATE SET
+                Target.idSocio = Source.idSocio,
+                Target.categoriaSocio = Source.categoriaSocio,
+                Target.fechaEmisionCobro = Source.fechaEmisionCobro,
+                Target.nombreSocio = Source.nombreSocio,
+                Target.apellidoSocio = Source.apellidoSocio,
+                Target.cuilDeudor = Source.cuilDeudor,
+                Target.domicilio = Source.domicilio,
+                Target.modalidadCobro = Source.modalidadCobro,
+                Target.numeroCuota = Source.numeroCuota,
+                Target.totalAbonado = Source.totalAbonado
+            -- idFacturaCobrada no se actualiza aquí, ya que no viene del CSV directamente
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT (
+                idCobro, idSocio, categoriaSocio, fechaEmisionCobro, 
+                nombreSocio, apellidoSocio, cuilDeudor, domicilio, 
+                modalidadCobro, numeroCuota, totalAbonado, idFacturaCobrada -- idFacturaCobrada se inserta como NULL
+            )
+            VALUES (
+                Source.idCobro, Source.idSocio, Source.categoriaSocio, Source.fechaEmisionCobro,
+                Source.nombreSocio, Source.apellidoSocio, Source.cuilDeudor, Source.domicilio,
+                Source.modalidadCobro, Source.numeroCuota, Source.totalAbonado, NULL -- idFacturaCobrada se inserta como NULL
+            );
+        PRINT '¡Datos de pagos de cuotas importados/actualizados con éxito!';
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+        RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);
+    END CATCH;
+    IF OBJECT_ID('tempdb..#StagingPagosCuotas') IS NOT NULL
+        DROP TABLE #StagingPagosCuotas;
+    IF OBJECT_ID('tempdb..#ProcessedCobros') IS NOT NULL
+        DROP TABLE #ProcessedCobros;
+END;
+GO
+
+-- CARGAR DATOS DEL CSV
+EXEC pagos.importarPagosCuotas
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\pagoCuotas.csv';
+GO
+
+-- VER DATOS CARGADOS
+SELECT * FROM pagos.cobroFactura;
+GO
+
 -- ************************************************************************************************
--- Procedimiento: socios.importarCategoriasSocio
+-- Procedimiento: socios.importarCategoriasSocio (1° ejecutar)
 -- Descripción: Este procedimiento se encarga de importar y sincronizar las categorías de membresía de socios desde un archivo CSV.
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene los datos de las categorías de socio.
@@ -243,7 +364,7 @@ END;
 GO
 
 -- CARGAR DATOS DEL CSV
-EXEC socios.importarCategoriasSocio @FilePath = 'C:\Importar\dataImport\tarifasCategoriaSocio.csv';
+EXEC socios.importarCategoriasSocio @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasCategoriaSocio.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -251,7 +372,7 @@ SELECT * FROM socios.categoriaMembresiaSocio;
 GO
 
 -- ************************************************************************************************
--- Procedimiento: actividades.importarDeportesDisponibles
+-- Procedimiento: actividades.importarDeportesDisponibles (2° ejecutar)
 -- Descripción: Este procedimiento se encarga de importar y sincronizar los deportes disponibles desde un archivo CSV.         
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene los datos.
@@ -340,7 +461,6 @@ GO
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene las tarifas de pileta.
 -- ************************************************************************************************
-GRANT ADMINISTER BULK OPERATIONS TO sa;
 CREATE OR ALTER PROCEDURE actividades.importarDeportesPileta
     @FilePath NVARCHAR(255) WITH EXECUTE AS OWNER
 AS
@@ -352,36 +472,18 @@ BEGIN
     DECLARE @DefaultCierre TIME = '20:00:00';
 
     DECLARE @DynamicSql NVARCHAR(MAX);
-    DECLARE @RowTerminator NVARCHAR(10);
-    DECLARE @FileExists INT;
-    DECLARE @ErrorMsg NVARCHAR(4000);
-    
-    -- 1. Verificar existencia del archivo con método más confiable
-    CREATE TABLE #FileCheck (FileExists INT, IsDirectory INT, ParentExists INT);
-    INSERT INTO #FileCheck EXEC master.dbo.xp_fileexist @FilePath;
-    
-    IF (SELECT FileExists FROM #FileCheck) = 0
-    BEGIN
-        SET @ErrorMsg = 'El archivo especificado no existe o no es accesible: ' + @FilePath;
-        RAISERROR(@ErrorMsg, 16, 1);
-        DROP TABLE #FileCheck;
-        RETURN;
-    END;
-    DROP TABLE #FileCheck;
-
-    -- 2. Crear tablas temporales
+    DECLARE @MaxRowNum INT;
     IF OBJECT_ID('tempdb..#StagingPiletaActividad') IS NOT NULL
         DROP TABLE #StagingPiletaActividad;
     
     CREATE TABLE #StagingPiletaActividad (
-        RowNum INT IDENTITY(1,1) PRIMARY KEY,
+        RowNum INT IDENTITY(1,1) PRIMARY KEY, -- Añadimos RowNum para ordenar sin CTEs
         TipoValorCsv NVARCHAR(50),
         TipoPersonaCsv NVARCHAR(50),
         TarifaSocioCsv NVARCHAR(50),
         TarifaInvitadoCsv NVARCHAR(50),
         VigenciaHastaCsv NVARCHAR(20)
     );
-    
     IF OBJECT_ID('tempdb..#ProcessedPiletaActividad') IS NOT NULL
         DROP TABLE #ProcessedPiletaActividad;
 
@@ -404,65 +506,18 @@ BEGIN
         vigenciaHasta DATE
     );
 
-
     BEGIN TRY
-        -- 3. Intentar diferentes configuraciones para BULK INSERT
-        DECLARE @BulkInsertSuccess BIT = 0;
-        DECLARE @Attempt INT = 1;
+        SET @DynamicSql = N'BULK INSERT #StagingPiletaActividad
+                             FROM ''' + @FilePath + N'''
+                             WITH
+                             (
+                                 FIRSTROW = 2,
+                                 FIELDTERMINATOR = '';'',
+                                 ROWTERMINATOR = ''0x0d0a'', -- CRLF para Windows
+                                 TABLOCK                  
+                             );';
         
-        WHILE @Attempt <= 4 AND @BulkInsertSuccess = 0
-        BEGIN
-            BEGIN TRY
-                SET @DynamicSql = N'BULK INSERT #StagingPiletaActividad
-                                    FROM ''' + @FilePath + N'''
-                                    WITH (';
-                
-                -- Configuración base
-                SET @DynamicSql += N'FIRSTROW = 2, 
-                                    FIELDTERMINATOR = '';'', 
-                                    TABLOCK, 
-                                    MAXERRORS = 100,';
-                
-                -- Configuraciones variables por intento
-                IF @Attempt = 1
-                BEGIN
-                    SET @DynamicSql += N'ROWTERMINATOR = ''0x0d0a'', CODEPAGE = ''ACP'');';  -- Windows ANSI
-                END
-                ELSE IF @Attempt = 2
-                BEGIN
-                    SET @DynamicSql += N'ROWTERMINATOR = ''0x0a'', CODEPAGE = ''ACP'');';    -- Unix/Linux ANSI
-                END
-                ELSE IF @Attempt = 3
-                BEGIN
-                    SET @DynamicSql += N'ROWTERMINATOR = ''0x0d0a'', CODEPAGE = ''65001'');'; -- Windows UTF-8
-                END
-                ELSE IF @Attempt = 4
-                BEGIN
-                    SET @DynamicSql += N'ROWTERMINATOR = ''0x0a'', CODEPAGE = ''65001'');';   -- Unix/Linux UTF-8
-                END
-                
-                EXEC sp_executesql @DynamicSql;
-                SET @BulkInsertSuccess = 1;  -- Éxito
-            END TRY
-            BEGIN CATCH
-                SET @Attempt += 1;
-                
-                IF @Attempt > 4
-                BEGIN
-                    -- Guardar error para reporte final
-                    SET @ErrorMsg = 'Error en BULK INSERT: ' + ERROR_MESSAGE() 
-                                  + ' | Configuración: ' + @DynamicSql;
-                END
-            END CATCH
-        END
-        
-        -- Si todos los intentos fallaron
-        IF @BulkInsertSuccess = 0
-        BEGIN
-            RAISERROR(@ErrorMsg, 16, 1);
-            RETURN;
-        END
-
+        EXEC sp_executesql @DynamicSql;
         INSERT INTO #ProcessedPiletaActividad (
             idActividad,
             tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
@@ -472,64 +527,43 @@ BEGIN
             horaAperturaActividad, horaCierreActividad, vigenciaHasta
         )
         SELECT
-            1 AS idActividad,
+            1 AS idActividad, -- Siempre será 1 para este registro
+            -- Tarifas Socio por Día
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor del dia' AND PropagatedData.TipoPersonaCsv = 'Adultos' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor de temporada' AND PropagatedData.TipoPersonaCsv = 'Adultos' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor del Mes' AND PropagatedData.TipoPersonaCsv = 'Adultos' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor del dia' AND PropagatedData.TipoPersonaCsv = 'Menores de 12 años' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor de temporada' AND PropagatedData.TipoPersonaCsv = 'Menores de 12 años' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor del Mes' AND PropagatedData.TipoPersonaCsv = 'Menores de 12 años' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaSocioFormatted) = 1 THEN CAST(PropagatedData.TarifaSocioFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
 
+            -- Tarifas Invitado por Día
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor del dia' AND PropagatedData.TipoPersonaCsv = 'Adultos' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor de temporada' AND PropagatedData.TipoPersonaCsv = 'Adultos' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor del Mes' AND PropagatedData.TipoPersonaCsv = 'Adultos' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor del dia' AND PropagatedData.TipoPersonaCsv = 'Menores de 12 años' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor de temporada' AND PropagatedData.TipoPersonaCsv = 'Menores de 12 años' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
             ISNULL(MAX(CASE WHEN PropagatedData.EffectiveTipoValor = 'Valor del Mes' AND PropagatedData.TipoPersonaCsv = 'Menores de 12 años' 
-                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 
-                                        THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) 
-                                        ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+                             THEN (CASE WHEN ISNUMERIC(PropagatedData.TarifaInvitadoFormatted) = 1 THEN CAST(PropagatedData.TarifaInvitadoFormatted AS DECIMAL(10,2)) ELSE @DefaultTariffValue END) END), @DefaultTariffValue),
+            -- Horarios fijos por defecto
             @DefaultApertura,
             @DefaultCierre,
-            MAX(ISNULL(CASE WHEN ISDATE(PropagatedData.VigenciaHastaCsv) = 1 
-                            THEN CONVERT(DATE, PropagatedData.VigenciaHastaCsv, 103) 
-                            ELSE NULL END, '2025-02-28'))
+            -- Vigencia (se toma la primera fecha encontrada que sea válida)
+            MAX(ISNULL(CASE WHEN ISDATE(PropagatedData.VigenciaHastaCsv) = 1 THEN CONVERT(DATE, PropagatedData.VigenciaHastaCsv, 103) ELSE NULL END, '2025-02-28'))
         FROM (
             SELECT
                 sa.RowNum,
+                -- Simulación de LAG: encontrar el TipoValorCsv del registro anterior no nulo
                 ISNULL(sa.TipoValorCsv, (
                     SELECT TOP 1 s_prev.TipoValorCsv
                     FROM #StagingPiletaActividad s_prev
@@ -542,10 +576,10 @@ BEGIN
                 sa.VigenciaHastaCsv
             FROM #StagingPiletaActividad sa
         ) AS PropagatedData
-        GROUP BY ();
-
+        GROUP BY (); -- Agrupar por nada para obtener una sola fila de resultados
         IF EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = 1)
         BEGIN
+            -- Si el registro existe, actualizarlo
             UPDATE Target
             SET
                 Target.tarifaSocioPorDiaAdulto = Source.tarifaSocioPorDiaAdulto,
@@ -568,7 +602,8 @@ BEGIN
         END
         ELSE
         BEGIN
-            SET IDENTITY_INSERT actividades.actividadPileta ON;
+            -- Si el registro no existe, insertarlo
+            SET IDENTITY_INSERT actividades.actividadPileta ON; -- Habilitar para insertar el ID 
             INSERT INTO actividades.actividadPileta (
                 idActividad, tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
                 tarifaSocioPorDiaMenor, tarifaSocioPorTemporadaMenor, tarifaSocioPorMesMenor,
@@ -583,38 +618,29 @@ BEGIN
                 tarifaInvitadoPorDiaMenor, tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorMesMenor,
                 horaAperturaActividad, horaCierreActividad, vigenciaHasta
             FROM #ProcessedPiletaActividad;
-            SET IDENTITY_INSERT actividades.actividadPileta OFF;
+            SET IDENTITY_INSERT actividades.actividadPileta OFF; -- Deshabilitar
         END;
-        
         PRINT 'Tarifas y horarios de actividad de pileta importados/actualizados con éxito!';
     END TRY
     BEGIN CATCH
+        -- Asegurar que IDENTITY_INSERT se desactive en caso de error
         IF (SELECT OBJECTPROPERTY(OBJECT_ID('actividades.actividadPileta'), 'TableHasIdentity')) = 1
+           AND (SELECT COLUMNPROPERTY(OBJECT_ID('actividades.actividadPileta'), 'idActividad', 'IsIdentity')) = 1
+           AND EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('actividades.actividadPileta') AND is_identity = 1 AND is_computed = 0 AND OBJECTPROPERTY(object_id, 'TableHasIdentity') = 1)
         BEGIN
             SET IDENTITY_INSERT actividades.actividadPileta OFF;
         END;
-        
         DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();
         DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
         DECLARE @ErrorState INT = ERROR_STATE();
-        
-        -- Detalles adicionales para diagnóstico
-        DECLARE @ErrorLine INT = ERROR_LINE();
-        DECLARE @ErrorProc NVARCHAR(126) = ERROR_PROCEDURE();
-        
-        SET @ErrorMessage = 'Error en línea ' + CAST(@ErrorLine AS NVARCHAR(10)) + 
-                           ', procedimiento ' + ISNULL(@ErrorProc, 'N/A') + 
-                           ': ' + @ErrorMessage;
-        
         RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);
     END CATCH;
-    
     IF OBJECT_ID('tempdb..#StagingPiletaActividad') IS NOT NULL
         DROP TABLE #StagingPiletaActividad;
-        
     IF OBJECT_ID('tempdb..#ProcessedPiletaActividad') IS NOT NULL
         DROP TABLE #ProcessedPiletaActividad;
 END;
+GO
 
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarDeportesPileta
@@ -731,7 +757,8 @@ END;
 GO
 
 -- CARGAR DATOS DEL CSV
-EXEC actividades.importarPresentismoActividadSocio @FilePath = 'C:\Importar\dataImport\presentismo_actividades.csv';
+EXEC actividades.importarPresentismoActividadSocio 
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\presentismo_actividades.csv';
 GO
 
 -- VER DATOS CARGADOS
