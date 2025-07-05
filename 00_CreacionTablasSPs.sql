@@ -689,145 +689,75 @@ BEGIN
 END;
 GO
 
-
-
-
-DECLARE @fechaingreso DATE
-SET @fechaingreso= DATEADD(MONTH, 3, GETDATE())
-IF NOT EXISTS (SELECT 1 FROM socios.categoriaMembresiaSocio WHERE tipo = 'Cadete')
-BEGIN
-  INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia, @fechaingreso)
-  VALUES ('Cadete', 100.00);
-END
-
-select * from socios.categoriaMembresiaSocio
-
-PRINT '--- Caso 1: Registro válido ---';
-DECLARE @newId1 INT;
-BEGIN TRY
-    EXEC socios.registrarNuevoSocio
-      @fechaIngreso          = '2025-06-28',
-      @primerUsuario         = 'usuario5',
-      @primerContrasenia     = 'clave122',
-      @tipoCategoriaSocio    = 'Cadete',
-      @dni                   = '12345678',
-      @cuil                  = '20‑12345678‑6',
-      @nombre                = 'Juan',
-      @apellido              = 'Perez',
-      @email                 = 'juan.perez@example.com',
-      @telefono              = '3412345678',
-      @fechaNacimiento       = '1990-01-01',
-      @contactoEmergencia    = '3411122233',
-      @direccion             = 'Calle Falsa 123',
-      @newIdSocio            = @newId1 OUTPUT;
-    PRINT '>> OK: idSocio = ' + CAST(@newId1 AS VARCHAR(10));
-END TRY
-BEGIN CATCH
-    PRINT 'ERROR: ' + ERROR_MESSAGE();
-END CATCH;
-
-PRINT '--- Caso 2: DNI inválido ---';
-BEGIN TRY
-    DECLARE @newId2 INT;
-    EXEC socios.registrarNuevoSocio
-      @fechaIngreso          = '2025-06-28',
-      @primerUsuario         = 'usuario2',
-      @primerContrasenia     = 'clave234',
-      @tipoCategoriaSocio    = 'Cadete',
-      @dni                   = '1234',            -- inválido
-      @cuil                  = '20-87654321-7',
-      @nombre                = 'Ana',
-      @apellido              = 'Gomez',
-      @newIdSocio            = @newId2 OUTPUT;
-END TRY
-BEGIN CATCH
-    PRINT 'ERROR: ' + ERROR_MESSAGE();
-END CATCH;
-
-GO
-
-PRINT '--- Caso 3: CUIL inválido ---';
-BEGIN TRY
-    DECLARE @newId3 INT;
-    EXEC socios.registrarNuevoSocio
-      @fechaIngreso          = '2025-06-28',
-      @primerUsuario         = 'usuario6',
-      @primerContrasenia     = 'clave355',
-      @tipoCategoriaSocio    = 'Cadete',
-      @dni                   = '87654321',
-      @cuil                  = '20-87654321-0',  -- checksum erróneo
-      @nombre                = 'Luis',
-      @apellido              = 'Lopez',
-      @newIdSocio            = @newId3 OUTPUT;
-END TRY
-BEGIN CATCH
-    PRINT 'ERROR: ' + ERROR_MESSAGE();
-END CATCH;
-GO
-
 CREATE OR ALTER PROCEDURE socios.actualizarSocio
-  @idSocio                  INT,
-  @categoriaSocio           INT            = NULL,
-  @dni                      VARCHAR(10)    = NULL,
-  @cuil                     VARCHAR(13)    = NULL,
-  @nombre                   VARCHAR(10)    = NULL,
-  @apellido                 VARCHAR(10)    = NULL,
-  @email                    VARCHAR(25)    = NULL,
-  @telefono                 VARCHAR(14)    = NULL,
-  @fechaNacimiento          DATE           = NULL,
-  @contactoDeEmergencia     VARCHAR(14)    = NULL,
-  @usuario                  VARCHAR(50)    = NULL,
-  @contraseniaNueva         VARCHAR(10)    = NULL,
-  @direccion                VARCHAR(25)    = NULL
+  @idSocio                INT,
+  @categoriaSocio         INT             = NULL,
+  @dni                    VARCHAR(10)     = NULL,
+  @nombre                 VARCHAR(50)     = NULL,
+  @apellido               VARCHAR(50)     = NULL,
+  @email                  VARCHAR(100)    = NULL,
+  @fechaNacimiento        DATE            = NULL,
+  @telefonoContacto       VARCHAR(20)     = NULL,
+  @telefonoEmergencia     VARCHAR(20)     = NULL,
+  @nombreObraSocial       VARCHAR(50)     = NULL,
+  @nroSocioObraSocial     VARCHAR(50)     = NULL,
+  @usuario                VARCHAR(50)     = NULL,
+  @contraseniaNueva       VARCHAR(10)     = NULL,
+  @direccion              VARCHAR(50)     = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- 1. Verificar existencia
+  -- 1) Verificar existencia
   IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
-    THROW 50011, 'Socio no encontrado.', 1;
+    THROW 50201, 'Socio no encontrado.', 1;
 
-  -- 2. Validaciones puntuales
+  -- 2) Validar nueva categoría si se pasa
   IF @categoriaSocio IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM socios.categoriaMembresiaSocio 
-                    WHERE idCategoria = @categoriaSocio 
-                      AND estadoCategoriaSocio = 1)
-      THROW 50012, 'Categoría no existe o está inactiva.', 1;
-  IF @dni IS NOT NULL AND socios.validarDNI(@dni) = 0
-    THROW 50013, 'DNI inválido.', 1;
-  IF @cuil IS NOT NULL AND socios.validarCUIL(@cuil) = 0
-    THROW 50014, 'CUIL inválido.', 1;
-  IF @usuario IS NOT NULL
-    AND EXISTS (SELECT 1 FROM socios.socio WHERE usuario = @usuario AND idSocio <> @idSocio)
-      THROW 50015, 'El usuario ya está en uso.', 1;
+    AND NOT EXISTS (
+      SELECT 1
+        FROM socios.categoriaMembresiaSocio
+       WHERE idCategoria = @categoriaSocio
+         AND estadoCategoriaSocio = 1
+         AND vigenciaHasta >= CAST(GETDATE() AS DATE)
+    )
+    THROW 50202, 'Categoría no existe, inactiva o vencida.', 1;
 
-  -- 3. Aplicar UPDATE
+  -- 3) Validar DNI si se pasa
+  IF @dni IS NOT NULL
+    AND socios.validarDNI(@dni) = 0
+    THROW 50203, 'DNI inválido.', 1;
+
+  -- 4) Validar unicidad de usuario si se pasa
+  IF @usuario IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+        FROM socios.socio
+       WHERE usuario = @usuario
+         AND idSocio <> @idSocio
+    )
+    THROW 50204, 'El usuario ya está en uso.', 1;
+
+  -- 5) Ejecutar UPDATE
   UPDATE socios.socio
   SET
-    categoriaSocio           = COALESCE(@categoriaSocio, categoriaSocio),
-    dni                      = COALESCE(@dni, dni),
-    cuil                     = COALESCE(@cuil, cuil),
-    nombre                   = COALESCE(@nombre, nombre),
-    apellido                 = COALESCE(@apellido, apellido),
-    email                    = COALESCE(@email, email),
-    telefono                 = COALESCE(@telefono, telefono),
-    fechaNacimiento          = COALESCE(@fechaNacimiento, fechaNacimiento),
-    contactoDeEmergencia     = COALESCE(@contactoDeEmergencia, contactoDeEmergencia),
-    usuario                  = COALESCE(@usuario, usuario),
-    contrasenia              = CASE 
-                                 WHEN @contraseniaNueva IS NOT NULL 
-                                 THEN @contraseniaNueva 
-                                 ELSE contrasenia 
-                               END,
-    fechaDeVigenciaContrasenia = CASE 
-                                 WHEN @contraseniaNueva IS NOT NULL 
-                                 THEN DATEADD(MONTH,3,GETDATE()) 
-                                 ELSE fechaDeVigenciaContrasenia 
-                               END,
-    direccion                = COALESCE(@direccion, direccion)
+    categoriaSocio       = COALESCE(@categoriaSocio, categoriaSocio),
+    dni                  = COALESCE(@dni, dni),
+    nombre               = COALESCE(@nombre, nombre),
+    apellido             = COALESCE(@apellido, apellido),
+    email                = COALESCE(@email, email),
+    fechaNacimiento      = COALESCE(@fechaNacimiento, fechaNacimiento),
+    telefonoContacto     = COALESCE(@telefonoContacto, telefonoContacto),
+    telefonoEmergencia   = COALESCE(@telefonoEmergencia, telefonoEmergencia),
+    nombreObraSocial     = COALESCE(@nombreObraSocial, nombreObraSocial),
+    nroSocioObraSocial   = COALESCE(@nroSocioObraSocial, nroSocioObraSocial),
+    usuario              = COALESCE(@usuario, usuario),
+    contrasenia          = COALESCE(@contraseniaNueva, contrasenia),
+    direccion            = COALESCE(@direccion, direccion)
   WHERE idSocio = @idSocio;
 END;
 GO
+
 
 CREATE OR ALTER PROCEDURE socios.eliminarSocioLogico
   @idSocio INT

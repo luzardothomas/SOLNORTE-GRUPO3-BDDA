@@ -76,38 +76,134 @@ EXEC socios.registrarNuevoSocio
 
 PRINT '>> Nuevo Socio ID: ' + CAST(@newSocioId AS VARCHAR(10));
 
--- 6) Verificación de resultados
-SELECT * 
-  FROM socios.ingresoSocio 
- WHERE idSocio = @newSocioId;
 
-SELECT * 
-  FROM socios.socio 
- WHERE idSocio = @newSocioId;
-
-SELECT * 
-  FROM socios.estadoMembresiaSocio 
- WHERE idSocio = @newSocioId;
-
-SELECT * 
-  FROM pagos.facturaActiva 
- WHERE idSocio = @newSocioId;
-
-SELECT * 
-  FROM pagos.facturaEmitida 
- WHERE idFactura = (SELECT MAX(idFactura) FROM pagos.facturaActiva);
-
-SELECT * 
-  FROM pagos.cuerpoFactura 
- WHERE idFactura = (SELECT MAX(idFactura) FROM pagos.facturaActiva);
-
-SELECT * 
-  FROM actividades.deporteActivo 
- WHERE idSocio = @newSocioId;
-
-SELECT * 
-  FROM socios.rolVigente 
- WHERE idSocio = @newSocioId;
+-- 2) Asegurar categorías vigentes: Cadete, Menor, Mayor
+MERGE INTO socios.categoriaMembresiaSocio AS T
+USING (VALUES
+  ('Cadete', 500.00, DATEADD(YEAR,1,GETDATE())),
+  ('Menor', 750.00, DATEADD(YEAR,1,GETDATE())),
+  ('Mayor', 1000.00, DATEADD(YEAR,1,GETDATE()))
+) AS S(tipo,costo,vig)
+ON T.tipo = S.tipo
+WHEN MATCHED THEN
+  UPDATE SET T.costoMembresia = S.costo, T.vigenciaHasta = S.vig, T.estadoCategoriaSocio = 1
+WHEN NOT MATCHED THEN
+  INSERT(tipo,costoMembresia,vigenciaHasta,estadoCategoriaSocio)
+  VALUES (S.tipo,S.costo,S.vig,1);
 GO
 
-SELECT * FROM actividades.deporteDisponible
+-- 3) Asegurar deportes vigentes: Natación, Fútbol, Yoga
+MERGE INTO actividades.deporteDisponible AS T
+USING (VALUES
+  ('Natación','Pileta',800.00, DATEADD(YEAR,1,GETDATE())),
+  ('Fútbol','Campo',600.00,   DATEADD(YEAR,1,GETDATE())),
+  ('Yoga','Sala',400.00,      DATEADD(YEAR,1,GETDATE()))
+) AS S(descr,tipo,costo,vig)
+ON T.descripcion = S.descr
+WHEN MATCHED THEN
+  UPDATE SET T.tipo = S.tipo, T.costoPorMes = S.costo, T.vigenciaHasta = S.vig
+WHEN NOT MATCHED THEN
+  INSERT(descripcion,tipo,costoPorMes,vigenciaHasta)
+  VALUES (S.descr,S.tipo,S.costo,S.vig);
+GO
+
+-- 4) Asegurar rol disponible: 1=Socio, 2=Deportista, 3=Instructor
+MERGE INTO socios.rolDisponible AS T
+USING (VALUES
+  (1,'Socio'),
+  (2,'Deportista'),
+  (3,'Instructor')
+) AS S(id,descr)
+ON T.idRol = S.id
+WHEN MATCHED THEN
+  UPDATE SET T.descripcion = S.descr, T.estadoRol = 1
+WHEN NOT MATCHED THEN
+  INSERT(idRol,descripcion,estadoRol)
+  VALUES (S.id,S.descr,1);
+GO
+
+-- 5) Variables comunes
+DECLARE @newSocio INT,
+        @depNata INT = (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion='Natación'),
+        @depFut  INT = (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion='Fútbol'),
+        @depYoga INT = (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion='Yoga'),
+		@fechaIngreso DATE = GETDATE();
+
+-- 6) Tres registros distintos
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso       = @fechaIngreso,
+  @primerUsuario      = 'luis.perez',
+  @primerContrasenia  = 'InitLP1',
+  @tipoCategoriaSocio = 'Cadete',
+  @dni                = '44391352',
+  @cuil               = '20-44391352-2',
+  @nombre             = 'Luis',
+  @apellido           = 'Pérez',
+  @email              = 'luis.perez@mail.com',
+  @fechaNacimiento    = '2008-05-21',
+  @telefonoContacto   = '1120001111',
+  @telefonoEmergencia = '1190001111',
+  @nombreObraSocial   = 'OS Juvenil',
+  @nroSocioObraSocial = 'OSJ123',
+  @usuario            = 'luis.p',
+  @contrasenia        = 'passLP1',
+  @direccion          = 'Calle A 123',
+  @deportePreferido   = @depNata,
+  @rolAsignar         = 2,
+  @newIdSocio         = @newSocio OUTPUT;
+PRINT 'Socio Cadete ID=' + CAST(@newSocio AS VARCHAR);
+
+SET @fechaIngreso=GETDATE()
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso       = @fechaIngreso,
+  @primerUsuario      = 'maria.gomez',
+  @primerContrasenia  = 'InitMG2',
+  @tipoCategoriaSocio = 'Menor',
+  @dni                = '30122333',
+  @cuil               = '27-30122333-7',
+  @nombre             = 'María',
+  @apellido           = 'Gómez',
+  @email              = 'maria.gomez@mail.com',
+  @fechaNacimiento    = '2005-11-10',
+  @telefonoContacto   = '1120002222',
+  @telefonoEmergencia = '1190002222',
+  @nombreObraSocial   = 'OS Menor',
+  @nroSocioObraSocial = 'OSM456',
+  @usuario            = 'maria.g',
+  @contrasenia        = 'passMG2',
+  @direccion          = 'Calle B 456',
+  @deportePreferido   = @depFut,
+  @rolAsignar         = 2,
+  @newIdSocio         = @newSocio OUTPUT;
+PRINT 'Socio Menor ID=' + CAST(@newSocio AS VARCHAR);
+
+SET @fechaIngreso=GETDATE()
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso       = @fechaIngreso,
+  @primerUsuario      = 'carlos.sanchez',
+  @primerContrasenia  = 'InitCS3',
+  @tipoCategoriaSocio = 'Mayor',
+  @dni                = '30133444',
+  @cuil               = '23-30133444-3',
+  @nombre             = 'Carlos',
+  @apellido           = 'Sánchez',
+  @email              = 'carlos.sanchez@mail.com',
+  @fechaNacimiento    = '1980-02-28',
+  @telefonoContacto   = '1120003333',
+  @telefonoEmergencia = '1190003333',
+  @nombreObraSocial   = 'OS Adulto',
+  @nroSocioObraSocial = 'OSA789',
+  @usuario            = 'carlos.s',
+  @contrasenia        = 'passCS3',
+  @direccion          = 'Calle C 789',
+  @deportePreferido   = @depYoga,
+  @rolAsignar         = 3,
+  @newIdSocio         = @newSocio OUTPUT;
+PRINT 'Socio Mayor ID=' + CAST(@newSocio AS VARCHAR);
+
+-- 7) Verificación rápida
+SELECT idSocio, categoriaSocio, nombre, apellido      FROM socios.socio      WHERE idSocio > 0;
+SELECT *                                            FROM pagos.cuerpoFactura WHERE idFactura > 0;
+SELECT *                                            FROM actividades.deporteActivo;
+SELECT *                                            FROM socios.rolVigente;
+GO
