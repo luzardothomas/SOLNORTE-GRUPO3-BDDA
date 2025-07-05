@@ -273,6 +273,16 @@ CREATE TABLE pagos.facturaEmitida (
 );
 GO
 
+CREATE TABLE pagos.cuerpoFactura (
+	idFactura INT,
+	idItemFactura INT NOT NULL, 
+	tipoItem VARCHAR(10),
+	descripcionItem VARCHAR(15), 
+	importeItem DECIMAL (10,2)
+	CONSTRAINT PK_cuerpoFactura PRIMARY KEY (idFactura, idItemFactura),
+	FOREIGN KEY (idFactura) REFERENCES pagos.facturaEmitida(idFactura)
+)
+
 -- 3.7 pagos.cobroFactura
 CREATE TABLE pagos.cobroFactura (
     idCobro BIGINT PRIMARY KEY,
@@ -369,7 +379,7 @@ GO
 -- 3.14 pagos.reembolso
 CREATE TABLE pagos.reembolso (
     idFacturaReembolso INT NOT NULL IDENTITY(1,1),
-    idCobroOriginal INT NOT NULL,
+    idCobroOriginal BIGINT NOT NULL,
     idFacturaOriginal INT NOT NULL,
     idSocioDestinatario INT NOT NULL,
     montoReembolsado DECIMAL(10, 2) NOT NULL CHECK (montoReembolsado > 0),
@@ -528,111 +538,159 @@ CREATE OR ALTER PROCEDURE socios.registrarNuevoSocio
   @fechaIngreso           DATE,
   @primerUsuario          VARCHAR(50),
   @primerContrasenia      VARCHAR(10),
-  @tipoCategoriaSocio     VARCHAR(15),  -- debe coincidir con categoriaMembresiaSocio.tipo
+  @tipoCategoriaSocio     VARCHAR(15),
   @dni                    VARCHAR(10),
   @cuil                   VARCHAR(13),
-  @nombre                 VARCHAR(10),
-  @apellido               VARCHAR(10),
-  @email                  VARCHAR(25)    = NULL,
-  @telefono               VARCHAR(14)    = NULL,
+  @nombre                 VARCHAR(50),
+  @apellido               VARCHAR(50),
+  @email                  VARCHAR(100)   = NULL,
   @fechaNacimiento        DATE           = NULL,
-  @contactoEmergencia     VARCHAR(14)    = NULL,
-  @direccion              VARCHAR(25)    = NULL,
+  @telefonoContacto       VARCHAR(20)    = NULL,
+  @telefonoEmergencia     VARCHAR(20)    = NULL,
+  @nombreObraSocial       VARCHAR(50)    = NULL,
+  @nroSocioObraSocial     VARCHAR(50)    = NULL,
+  @usuario                VARCHAR(50)    = NULL,
+  @contrasenia            VARCHAR(10)    = NULL,
+  @direccion              VARCHAR(50)    = NULL,
+  @deportePreferido       INT            = NULL,
+  @rolAsignar             INT            = NULL,
   @newIdSocio             INT            OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
+
+  -- VALIDACIONES PRE-TRANSACCIÓN
+  IF socios.validarDNI(@dni) = 0
+    THROW 50010, 'DNI inválido.', 1;
+  IF socios.validarCUIL(@cuil) = 0
+    THROW 50011, 'CUIL inválido.', 1;
+  IF @usuario IS NOT NULL
+     AND EXISTS(SELECT 1 FROM socios.socio WHERE usuario = @usuario)
+    THROW 50012, 'El nombre de usuario ya existe.', 1;
+  IF EXISTS(SELECT 1 FROM socios.ingresoSocio WHERE primerContrasenia = @primerContrasenia)
+    THROW 50013, 'La contraseña inicial ya existe.', 1;
+
   BEGIN TRANSACTION;
   BEGIN TRY
-    -- 1) Validar DNI y CUIL
-    IF socios.validarDNI(@dni) = 0
-      THROW 50010, 'DNI inválido.', 1;
-    IF socios.validarCUIL(@cuil) = 0
-      THROW 50011, 'CUIL inválido.', 1;
-
-    -- 2) Verificar unicidad de la contraseña inicial
-    IF EXISTS (SELECT 1 FROM socios.ingresoSocio WHERE primerContrasenia = @primerContrasenia)
-      THROW 50012, 'La contraseña inicial ya existe.', 1;
-
-    -- 3) Insertar en ingresoSocio
-    INSERT INTO socios.ingresoSocio (
-      fechaIngreso,
-      primerUsuario,
-      primerContrasenia,
-      tipoCategoriaSocio
+    -- 1) IngresoSocio
+    INSERT INTO socios.ingresoSocio(
+      fechaIngreso, primerUsuario, primerContrasenia, tipoCategoriaSocio
     ) VALUES (
-      @fechaIngreso,
-      @primerUsuario,
-      @primerContrasenia,
-      @tipoCategoriaSocio
+      @fechaIngreso, @primerUsuario, @primerContrasenia, @tipoCategoriaSocio
     );
     SET @newIdSocio = SCOPE_IDENTITY();
 
-    -- 4) Resolver el idCategoriaSocio de la tabla categoriaMembresiaSocio
+    -- 2) Resolver categoría vigente
     DECLARE @categoriaSocioId INT;
     SELECT @categoriaSocioId = idCategoria
       FROM socios.categoriaMembresiaSocio
-     WHERE tipo = @tipoCategoriaSocio;
+     WHERE tipo = @tipoCategoriaSocio
+       AND estadoCategoriaSocio = 1
+       AND vigenciaHasta >= CAST(GETDATE() AS DATE);
     IF @categoriaSocioId IS NULL
-      THROW 50013, 'Categoría de socio no encontrada.', 1;
+      THROW 50014, 'Categoría no encontrada, inactiva o vencida.', 1;
 
-    -- 5) Insertar en socio
-    INSERT INTO socios.socio (
-      idSocio,
-      categoriaSocio,
-      dni,
-      cuil,
-      nombre,
-      apellido,
-      email,
-      telefono,
-      fechaNacimiento,
-      fechaDeVigenciaContrasenia,
-      contactoDeEmergencia,
-      usuario,
-      contrasenia,
-      direccion
+    -- 3) Socio
+    INSERT INTO socios.socio(
+      idSocio, categoriaSocio,
+      nombre, apellido, dni, email,
+      fechaNacimiento, telefonoContacto, telefonoEmergencia,
+      nombreObraSocial, nroSocioObraSocial,
+      usuario, contrasenia, direccion
     ) VALUES (
-      @newIdSocio,
-      @categoriaSocioId,
-      @dni,
-      @cuil,
-      @nombre,
-      @apellido,
-      @email,
-      @telefono,
-      @fechaNacimiento,
-      DATEADD(MONTH, 3, GETDATE()),
-      @contactoEmergencia,
-      @primerUsuario,
-      @primerContrasenia,
-      @direccion
+      @newIdSocio, @categoriaSocioId,
+      @nombre, @apellido, @dni, @email,
+      @fechaNacimiento, @telefonoContacto, @telefonoEmergencia,
+      @nombreObraSocial, @nroSocioObraSocial,
+      @usuario, @contrasenia, @direccion
     );
 
-    -- 6) Insertar en estadoMembresiaSocio (forzamos IDENTITY para que coincida)
+    -- 4) EstadoMembresiaSocio
     SET IDENTITY_INSERT socios.estadoMembresiaSocio ON;
-    INSERT INTO socios.estadoMembresiaSocio (
-      idSocio,
-      tipoCategoriaSocio,
-      estadoMorosidadMembresia,
-      fechaVencimientoMembresia
+    INSERT INTO socios.estadoMembresiaSocio(
+      idSocio, tipoCategoriaSocio,
+      estadoMorosidadMembresia, fechaVencimientoMembresia
     ) VALUES (
-      @newIdSocio,
-      @tipoCategoriaSocio,
-      'Activo',
-      DATEADD(MONTH, 1, GETDATE())
+      @newIdSocio, @tipoCategoriaSocio,
+      'Activo', DATEADD(MONTH,1,GETDATE())
     );
     SET IDENTITY_INSERT socios.estadoMembresiaSocio OFF;
 
+    -- 5) FacturaActiva + Emitir
+    DECLARE @newFacturaId INT;
+    EXEC pagos.insertarFacturaActiva
+      @idSocio        = @newIdSocio,
+      @categoriaSocio = @categoriaSocioId,
+      @newFacturaId   = @newFacturaId OUTPUT;
+    DECLARE @domicilioFinal VARCHAR(50) = ISNULL(@direccion,'-');
+    EXEC pagos.emitirFactura
+      @idFactura      = @newFacturaId,
+      @cuilDeudor     = @cuil,                -- uso correcto de @cuil
+      @domicilio      = @domicilioFinal,
+      @modalidadCobro = 'Contado',
+      @importeBruto   = 0.00;
+
+     ----------------------------------------------------------------
+    -- 6) Insertar en cuerpoFactura: primero la membresía
+    ----------------------------------------------------------------
+    DECLARE 
+      @costoMembresia DECIMAL(10,2),
+      @descripcionMemb VARCHAR(50);
+
+    SELECT 
+      @costoMembresia  = costoMembresia,
+      @descripcionMemb = tipo
+    FROM socios.categoriaMembresiaSocio
+    WHERE idCategoria = @categoriaSocioId;
+
+    EXEC pagos.insertarCuerpoFactura
+      @idFactura        = @newFacturaId,
+      @tipoItem         = 'Membresía',
+      @descripcionItem  = @descripcionMemb,
+      @importeItem      = @costoMembresia;
+
+    ----------------------------------------------------------------
+    -- 7) Insertar en cuerpoFactura: deporte (si aplicó)
+    ----------------------------------------------------------------
+    IF @deportePreferido IS NOT NULL
+    BEGIN
+      EXEC actividades.insertarDeporteActivo
+        @idSocio   = @newIdSocio,
+        @idDeporte = @deportePreferido;
+
+      DECLARE @descr NVARCHAR(50), @costo DECIMAL(10,2);
+      SELECT 
+        @descr = descripcion,
+        @costo = costoPorMes
+      FROM actividades.deporteDisponible
+      WHERE idDeporte = @deportePreferido
+        AND vigenciaHasta >= CAST(GETDATE() AS DATE);
+
+      EXEC pagos.insertarCuerpoFactura
+        @idFactura        = @newFacturaId,
+        @tipoItem         = 'Deporte',
+        @descripcionItem  = @descr,
+        @importeItem      = @costo;
+    END
+
+    -- 8) RolVigente
+    IF @rolAsignar IS NOT NULL
+      EXEC socios.insertarRolVigente
+        @idRol   = @rolAsignar,
+        @idSocio = @newIdSocio;
+
     COMMIT TRANSACTION;
-    PRINT 'Socio registrado con éxito. ID = ' + CAST(@newIdSocio AS VARCHAR(10));
+    PRINT 'Registro exitoso. Socio ID=' + CAST(@newIdSocio AS VARCHAR(10));
   END TRY
   BEGIN CATCH
     IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
     THROW;
   END CATCH
-END
+END;
 GO
+
+
+
 
 DECLARE @fechaingreso DATE
 SET @fechaingreso= DATEADD(MONTH, 3, GETDATE())
@@ -1254,10 +1312,13 @@ BEGIN
       THROW 50011, 'El socio no tiene una membresía activa.', 1;
 
     -- Verificar que el deporte exista
-    IF NOT EXISTS (
-      SELECT 1 FROM actividades.deporteDisponible WHERE idDeporte = @idDeporte
-    )
-      THROW 50012, 'El deporte especificado no existe.', 1;
+	IF NOT EXISTS (
+	  SELECT 1
+		FROM actividades.deporteDisponible
+	   WHERE idDeporte = @idDeporte
+		 AND vigenciaHasta >= CAST(GETDATE() AS DATE)
+	)
+	  THROW 50012, 'El deporte especificado no existe o está vencido.', 1;
 
     -- Insertar actividad deportiva activa
     INSERT INTO actividades.deporteActivo (
@@ -1707,7 +1768,6 @@ BEGIN
 END;
 GO
 
-
 CREATE OR ALTER PROCEDURE pagos.borrarLogicoTarjetaEnUso
   @idSocio INT,
   @idTarjeta INT,
@@ -1739,158 +1799,29 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE pagos.insertarCobroFactura
-  @idFacturaCobrada INT,
-  @idSocio          INT,
-  @categoriaSocio   INT
-AS
-BEGIN
-  SET NOCOUNT ON;
-  DECLARE
-    @idServicio           INT,
-    @descrServicio        VARCHAR(50),
-    @fechaFact            DATE,
-    @cuilDeudor           INT,
-    @domicilio            VARCHAR(20),
-    @modalidad            VARCHAR(25),
-    @importeTotal         DECIMAL(10,2),
-    @fechaSegundoVto      DATE,
-    @nombreSocio          VARCHAR(10),
-    @apellidoSocio        VARCHAR(10),
-    @numCuotas            INT,
-    @siguienteCuota       INT,
-    @totalAbonado         DECIMAL(10,2);
-
-  -- 1) Traer datos de la factura, incluyendo segundo vencimiento
-SELECT
-  @idServicio        = idServicioFacturado,
-  @descrServicio     = descripcionServicioFacturado,
-  @fechaFact         = fechaEmision,
-  @cuilDeudor        = cuilDeudor,
-  @domicilio         = domicilio,
-  @modalidad         = modalidadCobro,
-  @importeTotal      = importeTotal,
-  @fechaSegundoVto   = fechaSegundoVencimiento
-FROM pagos.facturaEmitida
-WHERE idFactura = @idFacturaCobrada;
-
-  IF @@ROWCOUNT = 0
-  BEGIN
-    RAISERROR('Factura %d no encontrada.',16,1,@idFacturaCobrada);
-    RETURN;
-  END
-
-  -- 2) Traer datos del socio
-  SELECT @nombreSocio = nombre, @apellidoSocio = apellido 
-  FROM socios.socio
-  WHERE idSocio = @idSocio
-    AND categoriaSocio = @categoriaSocio;
-
-  IF @@ROWCOUNT = 0
-  BEGIN
-    RAISERROR('Socio %d / categoría %d no encontrado.',16,1,@idSocio,@categoriaSocio);
-    RETURN;
-  END
-  -- 3) Calcular número de cuotas
-  SET @numCuotas = TRY_CAST(SUBSTRING(@modalidad, CHARINDEX(':', @modalidad) + 1, 10) AS INT);
-  IF @numCuotas IS NULL OR @numCuotas <= 0
-  BEGIN
-    RAISERROR('ModalidadCobro inválida: %s.',16,1,@modalidad);
-    RETURN;
-  END
-
-  -- 4) Calcular siguiente cuota
-  SELECT @siguienteCuota = COALESCE(MAX(numeroCuota), 0) + 1
-  FROM pagos.cobroFactura
-  WHERE idFacturaCobrada = @idFacturaCobrada;
-
-  IF @siguienteCuota > @numCuotas
-  BEGIN
-    RAISERROR('Ya se cobraron las %d cuotas de la factura %d.',16,1,@numCuotas,@idFacturaCobrada);
-    RETURN;
-  END
-
-  -- 5) Calcular el monto de esta cuota
-  IF GETDATE() > @fechaSegundoVto
-    -- aplica recargo 10% si pasó el segundo vencimiento
-    SET @totalAbonado = ROUND(@importeTotal * 1.10 / @numCuotas, 2);
-  ELSE
-    SET @totalAbonado = ROUND(@importeTotal * 1.0 / @numCuotas, 2);
-
-  -- 6) Insertar el cobro
-  INSERT INTO pagos.cobroFactura (
-    idFacturaCobrada, idSocio, categoriaSocio,
-    idServicioCobrado, descripcionServicioCobrado,
-    fechaEmisionCobro, nombreSocio, apellidoSocio,
-    fechaEmision, cuilDeudor, domicilio, modalidadCobro,
-    numeroCuota, totalAbonado
-  )
-  VALUES (
-    @idFacturaCobrada, @idSocio, @categoriaSocio,
-    @idServicio, @descrServicio,
-    GETDATE(), @nombreSocio, @apellidoSocio,
-    @fechaFact, @cuilDeudor, @domicilio, @modalidad,
-    @siguienteCuota, @totalAbonado
-  );
-END
-GO
-
-CREATE OR ALTER PROCEDURE pagos.eliminarCobroFactura
-  @idCobro          INT,
-  @idFacturaCobrada INT
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  -- Verificar existencia del cobro
-  IF NOT EXISTS (
-    SELECT 1 
-      FROM pagos.cobroFactura
-     WHERE idCobro = @idCobro
-       AND idFacturaCobrada = @idFacturaCobrada
-  )
-  BEGIN
-    RAISERROR('Cobro %d / factura %d no encontrado.', 16, 1, @idCobro, @idFacturaCobrada);
-    RETURN;
-  END
-
-  -- Borrado físico del registro
-  DELETE FROM pagos.cobroFactura
-  WHERE idCobro = @idCobro
-    AND idFacturaCobrada = @idFacturaCobrada;
-END
-GO
-
 CREATE OR ALTER PROCEDURE pagos.insertarFacturaActiva
-  @idSocio                  INT,
-  @categoriaSocio           INT
+  @idSocio          INT,
+  @categoriaSocio   INT,
+  @newFacturaId     INT OUTPUT
 AS
 BEGIN
   SET NOCOUNT ON;
-
-  -- 1) Validar que el socio y su categoría existan
-  IF NOT EXISTS (
-    SELECT 1 FROM socios.socio            WHERE idSocio = @idSocio
-  ) OR NOT EXISTS (
-    SELECT 1 FROM socios.categoriaMembresiaSocio
-    WHERE idCategoria = @categoriaSocio
-      AND estadoCategoriaSocio = 1
-  )
-    THROW 60001, 'Socio o categoría no válidos.', 1;
-
-  -- 2) Insertar con fechas calculadas
   DECLARE @hoy DATE = CAST(GETDATE() AS DATE);
 
-  INSERT INTO pagos.facturaActiva (
-    idSocio, categoriaSocio, estadoFactura,
-    fechaEmision, fechaPrimerVencimiento, fechaSegundoVencimiento
-  )
-  VALUES (
-    @idSocio, @categoriaSocio, 'Pendiente',
-    @hoy,
-    DATEADD(DAY, 5, @hoy),
-    DATEADD(DAY, 10, @hoy)
-  );
+  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+     OR NOT EXISTS (
+       SELECT 1 FROM socios.categoriaMembresiaSocio
+       WHERE idCategoria = @categoriaSocio AND estadoCategoriaSocio = 1)
+    THROW 60001,'Socio o categoría no válidos.',1;
+
+  INSERT INTO pagos.facturaActiva
+    (idSocio,categoriaSocio,estadoFactura,fechaEmision,
+     fechaPrimerVencimiento,fechaSegundoVencimiento)
+  VALUES
+    (@idSocio,@categoriaSocio,'Pendiente',
+     @hoy, DATEADD(DAY,5,@hoy), DATEADD(DAY,10,@hoy));
+
+  SET @newFacturaId = SCOPE_IDENTITY();
 END;
 GO
 
@@ -1941,7 +1872,7 @@ BEGIN
       THROW 60011, 'Sólo se puede emitir una factura pendiente.', 1;
 
     -- 2) Validar CUIL
-    IF pagos.validarCUIL(@cuilDeudor) = 0
+    IF socios.validarCUIL(@cuilDeudor) = 0
       THROW 60012, 'CUIL inválido.', 1;
 
     -- 3) Calcular importeTotal (aquí igualamos a bruto; lógica de descuento puede ir aparte)
@@ -2519,7 +2450,7 @@ GO
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: insertarDescuentoDisponible
 -- ------------------------------------------------------------------------------
-CREATE PROCEDURE descuentos.insertarDescuentoDisponible
+CREATE OR ALTER PROCEDURE descuentos.insertarDescuentoDisponible
     @tipo VARCHAR(100),
     @porcentajeDescontado DECIMAL(5, 2)
 AS
@@ -2553,7 +2484,7 @@ GO
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: modificarDescuentoDisponible
 -- ------------------------------------------------------------------------------
-CREATE PROCEDURE descuentos.modificarDescuentoDisponible
+CREATE OR ALTER PROCEDURE descuentos.modificarDescuentoDisponible
     @idDescuento INT,
     @tipo VARCHAR(100),
     @porcentajeDescontado DECIMAL(5, 2)
@@ -2603,7 +2534,7 @@ GO
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: eliminarDescuentoDisponible
 -- ------------------------------------------------------------------------------
-CREATE PROCEDURE descuentos.eliminarDescuentoDisponible
+CREATE OR ALTER PROCEDURE descuentos.eliminarDescuentoDisponible
     @idDescuento INT
 AS
 BEGIN
@@ -2644,7 +2575,7 @@ GO
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: insertarDescuentoVigente
 -- ------------------------------------------------------------------------------
-CREATE PROCEDURE descuentos.insertarDescuentoVigente
+CREATE OR ALTER PROCEDURE descuentos.insertarDescuentoVigente
     @idDescuento INT,
     @idSocio INT
 AS
@@ -2696,7 +2627,7 @@ GO
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: modificarDescuentoVigente
 -- ------------------------------------------------------------------------------
-CREATE PROCEDURE descuentos.modificarDescuentoVigente
+CREATE OR ALTER PROCEDURE descuentos.modificarDescuentoVigente
     @old_idDescuento INT,
     @old_idSocio INT,
     @new_idDescuento INT,
@@ -2786,7 +2717,7 @@ GO
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: eliminarDescuentoVigente
 -- ------------------------------------------------------------------------------
-CREATE PROCEDURE descuentos.eliminarDescuentoVigente
+CREATE OR ALTER PROCEDURE descuentos.eliminarDescuentoVigente
     @idDescuento INT,
     @idSocio INT
 AS
