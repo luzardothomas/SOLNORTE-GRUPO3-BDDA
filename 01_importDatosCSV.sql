@@ -1,291 +1,18 @@
+----------------------------------------------------------------------------------------------------
+-- Fecha de entrega: 01-07-2025
+-- Numero de grupo: 3
+-- Materia: Bases de Datos Aplicada
+-- Alumnos:
+--   - Codina, Santiago Ivan - 44.391.352
+--   - Santillan, Lautaro Ezequiel - 45.175.053
+----------------------------------------------------------------------------------------------------
+
 -- Usar la base de datos
 USE Com2900G03;
 GO
 
--- Datos de Prueba (NO SON LOS REALES QUE VAN A IR ***)
-
--- Insertar datos en socios.socio ***
-INSERT INTO socios.socio (idSocio, categoriaSocio, dni, cuil, nombre, apellido, email, telefono, fechaNacimiento, fechaDeVigenciaContrasenia, fechaIngresoSocio, contactoDeEmergencia, usuario, contrasenia, estadoMembresia, fechaVencimientoMembresia, direccion) VALUES
-(4148, 1, '12345678', '20123456789', 'Juan', 'Perez', 'juan.p@email.com', '1122334455', '1990-01-15', '2025-12-31', '2020-05-01', '1166778899', 'juanp', 'pass123', 'Activo', '2025-07-31', 'Calle Falsa 123'),
-(4144, 1, '87654321', '27876543210', 'Maria', 'Gomez', 'maria.g@email.com', '1133445566', '1988-03-20', '2025-12-31', '2021-02-10', '1177889900', 'mariag', 'pass123', 'Activo', '2025-07-31', 'Av. Siempre Viva 742'),
-(4149, 2, '11223344', '20112233445', 'Carlos', 'Lopez', 'carlos.l@email.com', '1144556677', '1995-07-05', '2025-12-31', '2022-01-15', '1188990011', 'carlosl', 'pass123', 'Activo', '2025-07-31', 'Ruta 66 Km 10'),
-(4129, 2, '22334455', '27223344556', 'Ana', 'Rodriguez', 'ana.r@email.com', '1155667788', '1992-11-10', '2025-12-31', '2021-09-20', '1199001122', 'anar', 'pass123', 'Activo', '2025-07-31', 'Callejon Diagon 4'),
-(4132, 1, '33445566', '20334455667', 'Pedro', 'Martinez', 'pedro.m@email.com', '1166778899', '1985-04-25', '2025-12-31', '2020-11-05', '1100112233', 'pedrom', 'pass123', 'Activo', '2025-07-31', 'Plaza Mayor 5'),
-(4133, 3, '44556677', '27445566778', 'Laura', 'Diaz', 'laura.d@email.com', '1177889900', '1998-09-30', '2025-12-31', '2023-03-12', '1111223344', 'laurad', 'pass123', 'Activo', '2025-07-31', 'Avenida Siempre 1'); -- �CORREGIDO! Agregado 'pass123' para contrasenia
-GO
-
--- Insertar datos en actividades.deporteActivo ***
-INSERT INTO actividades.deporteActivo (idSocio, idDeporte, estadoActividadDeporte, estadoMembresia) VALUES
-(4148, (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion = 'Futsal'), 'Activo', 'Activo'),
-(4144, (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion = 'Futsal'), 'Activo', 'Activo'),
-(4149, (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion = 'Futsal'), 'Activo', 'Activo'),
-(4129, (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion = 'Futsal'), 'Activo', 'Activo'),
-(4132, (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion = 'Futsal'), 'Activo', 'Activo'),
-(4133, (SELECT idDeporte FROM actividades.deporteDisponible WHERE descripcion = 'Futsal'), 'Activo', 'Activo');
-GO
-
 -- ************************************************************************************************
--- Procedimiento: socios.importarGrupoFamiliar (4° ejecutar)
--- Descripción: Este procedimiento se encarga de importar y sincronizar los datos de los miembros individuales del grupo familiar desde un archivo CSV.
--- Parámetros:
---   @FilePath NVARCHAR(255): Ruta completa del archivo CSV de datos del grupo familiar.
--- ************************************************************************************************
-CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar --REVISAR BIEN EL PORQUE NO ANDA (PARECE SER UN ERROR DE BLOQUEOS O PERMISOS PERO NO LO ENCUENTRO)
-    @FilePath NVARCHAR(255) WITH EXECUTE AS OWNER
-AS
-BEGIN
-    SET NOCOUNT ON;
-    DECLARE @DefaultTextValue NVARCHAR(50) = 'A completar'; -- Valor por defecto para campos de texto vacíos
-    DECLARE @DefaultDateValue DATE = '1900-01-01';          -- Valor por defecto para fechas inválidas
-    DECLARE @consultaSqlDinamica NVARCHAR(MAX);
-    IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
-        DROP TABLE #StagingGrupoFamiliar;
-    -- Creamos la tabla temporal. Las columnas aquí deben coincidir con las columnas y el orden de tu archivo CSV.
-    -- Las columnas con espacios en el nombre del CSV se manejan con [].
-    CREATE TABLE #StagingGrupoFamiliar (
-        [Nro de Socio] NVARCHAR(50),
-        [Nro de socio RP] NVARCHAR(50),
-        [Nombre] NVARCHAR(50),
-        [ apellido] NVARCHAR(50),
-        [ DNI] NVARCHAR(10),
-        [ email personal] NVARCHAR(50),
-        [ fecha de nacimiento] NVARCHAR(20),
-        [ teléfono de contacto] NVARCHAR(14),
-        [ teléfono de contacto emergencia] NVARCHAR(14),
-        [Nombre de la obra social o prepaga] NVARCHAR(50),
-        [nro. de socio obra social/prepaga ] NVARCHAR(50),
-        [teléfono de contacto de emergencia ] NVARCHAR(14)
-    );
-    BEGIN TRY
-        -- Construimos la sentencia BULK INSERT de forma dinámica.
-        SET @consultaSqlDinamica = N'BULK INSERT #StagingGrupoFamiliar
-                                     FROM ''' + @FilePath + N'''
-                                     WITH
-                                     (
-                                         FIRSTROW = 2,
-                                         FIELDTERMINATOR = '';'',
-                                         ROWTERMINATOR = ''0x0d0a'',
-										 TABLOCK
-                                     );'; 
-		PRINT 'Usuario actual: ' + SYSTEM_USER;
-		PRINT 'Login actual: ' + ORIGINAL_LOGIN();
-        EXEC sp_executesql @consultaSqlDinamica;
-        -- MERGE nos permite insertar nuevas filas o actualizar existentes en un solo paso.
-        MERGE socios.grupoFamiliar AS Target
-        USING (
-            -- Subconsulta para preparar los datos de origen, realizando transformaciones
-            SELECT
-                -- idGrupoFamiliar: Transformar 'SN-XXXX' a INT. Este será el PK.
-                CAST(REPLACE(st.[Nro de Socio], 'SN-', '') AS INT) AS idMiembroFamiliar,
-                -- idSocioResponsable: Transformar 'SN-XXXX' a INT.
-                CAST(REPLACE(st.[Nro de socio RP], 'SN-', '') AS INT) AS idSocioResponsable,
-                -- Limpiar espacios en nombre y apellido
-                RTRIM(LTRIM(st.Nombre)) AS Nombre,
-                RTRIM(LTRIM(st.[ apellido])) AS Apellido,
-                RTRIM(LTRIM(st.[ DNI])) AS DNI,
-                -- Manejar campos de texto vacíos (NULLIF convierte '' a NULL, ISNULL reemplaza NULL con @DefaultTextValue)
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[ email personal])), ''), @DefaultTextValue) AS EmailPersonal,
-                -- Convertir fecha de nacimiento (DD/MM/YYYY) usando TRY_CONVERT y valor por defecto
-                ISNULL(TRY_CONVERT(DATE, st.[ fecha de nacimiento], 103), @DefaultDateValue) AS FechaNacimiento,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[ teléfono de contacto])), ''), @DefaultTextValue) AS TelefonoContacto,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[ teléfono de contacto emergencia])), ''), @DefaultTextValue) AS TelefonoContactoEmergencia,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[Nombre de la obra social o prepaga])), ''), @DefaultTextValue) AS NombreObraSocial,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[nro. de socio obra social/prepaga ])), ''), @DefaultTextValue) AS NroSocioObraSocial,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[teléfono de contacto de emergencia ])), ''), @DefaultTextValue) AS TelefonoObraSocialEmergencia
-            FROM
-                #StagingGrupoFamiliar st -- Los datos que recién cargamos del CSV
-        ) AS Source (idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni, emailPersonal,
-                     fechaNacimiento, telefonoContacto, telefonoContactoEmergencia,
-                     nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia)
-        -- La condición ON para MERGE se basa en la clave primaria de la tabla destino
-        ON Target.idGrupoFamiliar = Source.idGrupoFamiliar
-        WHEN MATCHED THEN
-            UPDATE SET
-                Target.idSocioResponsable = Source.idSocioResponsable,
-                Target.nombre = Source.nombre,
-                Target.apellido = Source.apellido,
-                Target.dni = Source.dni,
-                Target.emailPersonal = Source.emailPersonal,
-                Target.fechaNacimiento = Source.fechaNacimiento,
-                Target.telefonoContacto = Source.telefonoContacto,
-                Target.telefonoContactoEmergencia = Source.telefonoContactoEmergencia,
-                Target.nombreObraSocial = Source.nombreObraSocial,
-                Target.nroSocioObraSocial = Source.nroSocioObraSocial,
-                Target.telefonoObraSocialEmergencia = Source.telefonoObraSocialEmergencia
-        WHEN NOT MATCHED THEN
-            INSERT (idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni, emailPersonal,
-                    fechaNacimiento, telefonoContacto, telefonoContactoEmergencia,
-                    nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia)
-            VALUES (Source.idGrupoFamiliar, Source.idSocioResponsable, Source.nombre, Source.apellido, Source.dni, Source.emailPersonal,
-                    Source.fechaNacimiento, Source.telefonoContacto, Source.telefonoContactoEmergencia,
-                    Source.nombreObraSocial, Source.nroSocioObraSocial, Source.telefonoObraSocialEmergencia);
-        PRINT 'Datos de miembros del grupo familiar importados/actualizados con exito!';
-    END TRY
-    BEGIN CATCH
-        -- Manejo de Errores
-        DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
-        DECLARE @SeveridadError INT = ERROR_SEVERITY();
-        DECLARE @EstadoError INT = ERROR_STATE();
-        RAISERROR(@MensajeError, @SeveridadError, @EstadoError);
-    END CATCH;
-    IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
-        DROP TABLE #StagingGrupoFamiliar;
-END;
-GO
-
-
--- CARGAR DATOS DEL CSV
-EXEC socios.importarGrupoFamiliar
-	@FilePath = 'C:\Importar\dataImport\grupoFamiliar.csv';
-GO
-
-SELECT 
-  rp.name AS RoleName, 
-  mp.name AS MemberName 
-FROM sys.server_role_members m
-JOIN sys.server_principals rp ON m.role_principal_id = rp.principal_id
-JOIN sys.server_principals mp ON m.member_principal_id = mp.principal_id
-WHERE rp.name = 'bulkadmin';
-
--- VER DATOS CARGADOS
-SELECT * FROM socios.grupoFamiliar;
-GO
-
--- ========================================================================
--- Procedimiento: pagos.importarPagosCuotas (5° ejecutar)
--- Descripción: Importa datos de pagos de cuotas desde "pagoCuotas.csv" a la tabla 'pagos.cobroFactura'.
--- Parámetros:
---   @FilePath NVARCHAR(255): Ruta completa del archivo CSV,
--- ========================================================================
-CREATE OR ALTER PROCEDURE pagos.importarPagosCuotas
-    @FilePath NVARCHAR(255)
-AS
-BEGIN
-    SET NOCOUNT ON;
-    DECLARE @DynamicSql NVARCHAR(MAX);
-    IF OBJECT_ID('tempdb..#StagingPagosCuotas') IS NOT NULL
-        DROP TABLE #StagingPagosCuotas;
-    
-    CREATE TABLE #StagingPagosCuotas (
-        IdDePagoCsv NVARCHAR(50),
-        FechaCsv NVARCHAR(50),
-        ResponsableDePagoCsv NVARCHAR(50), -- SN-XXXX
-        ValorCsv NVARCHAR(50),
-        MedioDePagoCsv NVARCHAR(50)
-    );
-
-    BEGIN TRY
-        SET @DynamicSql = N'BULK INSERT #StagingPagosCuotas
-                             FROM ''' + @FilePath + N'''
-                             WITH
-                             (
-                                 FIRSTROW = 2, -- Omitir encabezados
-                                 FIELDTERMINATOR = '';'', -- Separador de columnas
-                                 ROWTERMINATOR = ''0x0d0a'', -- CRLF para Windows
-                                 TABLOCK                  
-                             );';
-        
-        EXEC sp_executesql @DynamicSql;
-        IF OBJECT_ID('tempdb..#ProcessedCobros') IS NOT NULL
-            DROP TABLE #ProcessedCobros;
-
-        CREATE TABLE #ProcessedCobros (
-            idCobro BIGINT PRIMARY KEY, -- Corregido a BIGINT
-            idSocio INT,
-            categoriaSocio INT,
-            fechaEmisionCobro DATE,
-            nombreSocio VARCHAR(50),
-            apellidoSocio VARCHAR(50),
-            cuilDeudor VARCHAR(13),
-            domicilio VARCHAR(50),
-            modalidadCobro VARCHAR(25),
-            numeroCuota INT,
-            totalAbonado DECIMAL(10, 2)
-        );
-        INSERT INTO #ProcessedCobros (
-            idCobro, idSocio, categoriaSocio, fechaEmisionCobro, 
-            nombreSocio, apellidoSocio, cuilDeudor, domicilio, 
-            modalidadCobro, numeroCuota, totalAbonado
-        )
-        SELECT
-            -- Validar y convertir IdDePagoCsv a BIGINT
-            CASE WHEN ISNUMERIC(sp.IdDePagoCsv) = 1 THEN CAST(sp.IdDePagoCsv AS BIGINT) ELSE NULL END AS idCobro, -- Corregido a BIGINT
-            -- Extraer el número de socio (ej. SN-4001 -> 4001)
-            CAST(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv)) AS INT) AS idSocio,
-            s.categoriaSocio, -- Obtener la categoría del socio de la tabla socios.socio
-            -- Convertir fecha (D/M/YYYY) a DATE
-            CASE WHEN ISDATE(REPLACE(sp.FechaCsv, '/', '-')) = 1 THEN CONVERT(DATE, sp.FechaCsv, 103) ELSE NULL END AS fechaEmisionCobro,
-            s.nombre AS nombreSocio,
-            s.apellido AS apellidoSocio,
-            s.dni AS cuilDeudor, -- Usar DNI del socio como CUIL (asumiendo que es el CUIL)
-            s.direccion AS domicilio, -- Obtener domicilio del socio
-            TRIM(sp.MedioDePagoCsv) AS modalidadCobro, -- Usar el valor directo del CSV
-            1 AS numeroCuota, -- Valor por defecto, ya que el CSV no lo proporciona
-            -- Validar y convertir ValorCsv a DECIMAL
-            CASE WHEN ISNUMERIC(sp.ValorCsv) = 1 THEN CAST(sp.ValorCsv AS DECIMAL(10,2)) ELSE 0.00 END AS totalAbonado
-        FROM
-            #StagingPagosCuotas sp
-        INNER JOIN
-            socios.socio s ON CAST(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv)) AS INT) = s.idSocio
-        WHERE
-            -- Filtrar solo registros donde el ID de pago, ID de socio y valor sean válidos numéricamente
-            ISNUMERIC(sp.IdDePagoCsv) = 1
-            AND ISNUMERIC(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv))) = 1
-            AND ISNUMERIC(sp.ValorCsv) = 1;
-
-        MERGE pagos.cobroFactura AS Target
-        USING #ProcessedCobros AS Source
-        ON (Target.idCobro = Source.idCobro)
-        WHEN MATCHED THEN
-            UPDATE SET
-                Target.idSocio = Source.idSocio,
-                Target.categoriaSocio = Source.categoriaSocio,
-                Target.fechaEmisionCobro = Source.fechaEmisionCobro,
-                Target.nombreSocio = Source.nombreSocio,
-                Target.apellidoSocio = Source.apellidoSocio,
-                Target.cuilDeudor = Source.cuilDeudor,
-                Target.domicilio = Source.domicilio,
-                Target.modalidadCobro = Source.modalidadCobro,
-                Target.numeroCuota = Source.numeroCuota,
-                Target.totalAbonado = Source.totalAbonado
-            -- idFacturaCobrada no se actualiza aquí, ya que no viene del CSV directamente
-        WHEN NOT MATCHED BY TARGET THEN
-            INSERT (
-                idCobro, idSocio, categoriaSocio, fechaEmisionCobro, 
-                nombreSocio, apellidoSocio, cuilDeudor, domicilio, 
-                modalidadCobro, numeroCuota, totalAbonado, idFacturaCobrada -- idFacturaCobrada se inserta como NULL
-            )
-            VALUES (
-                Source.idCobro, Source.idSocio, Source.categoriaSocio, Source.fechaEmisionCobro,
-                Source.nombreSocio, Source.apellidoSocio, Source.cuilDeudor, Source.domicilio,
-                Source.modalidadCobro, Source.numeroCuota, Source.totalAbonado, NULL -- idFacturaCobrada se inserta como NULL
-            );
-        PRINT '¡Datos de pagos de cuotas importados/actualizados con éxito!';
-    END TRY
-    BEGIN CATCH
-        DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();
-        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
-        DECLARE @ErrorState INT = ERROR_STATE();
-        RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);
-    END CATCH;
-    IF OBJECT_ID('tempdb..#StagingPagosCuotas') IS NOT NULL
-        DROP TABLE #StagingPagosCuotas;
-    IF OBJECT_ID('tempdb..#ProcessedCobros') IS NOT NULL
-        DROP TABLE #ProcessedCobros;
-END;
-GO
-
--- CARGAR DATOS DEL CSV
-EXEC pagos.importarPagosCuotas
-	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\pagoCuotas.csv';
-GO
-
--- VER DATOS CARGADOS
-SELECT * FROM pagos.cobroFactura;
-GO
-
--- ************************************************************************************************
--- Procedimiento: socios.importarCategoriasSocio (1° ejecutar)
+-- Procedimiento: socios.importarCategoriasSocio (1° ejecutar - FUNCIONA)
 -- Descripción: Este procedimiento se encarga de importar y sincronizar las categorías de membresía de socios desde un archivo CSV.
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene los datos de las categorías de socio.
@@ -364,7 +91,8 @@ END;
 GO
 
 -- CARGAR DATOS DEL CSV
-EXEC socios.importarCategoriasSocio @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasCategoriaSocio.csv';
+EXEC socios.importarCategoriasSocio 
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasCategoriaSocio.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -372,7 +100,7 @@ SELECT * FROM socios.categoriaMembresiaSocio;
 GO
 
 -- ************************************************************************************************
--- Procedimiento: actividades.importarDeportesDisponibles (2° ejecutar)
+-- Procedimiento: actividades.importarDeportesDisponibles (2° ejecutar - FUNCIONA)
 -- Descripción: Este procedimiento se encarga de importar y sincronizar los deportes disponibles desde un archivo CSV.         
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene los datos.
@@ -446,7 +174,8 @@ END;
 GO
 
 -- CARGAR DATOS DEL CSV
-EXEC actividades.importarDeportesDisponibles @FilePath = 'C:\Importar\dataImport\tarifasActividades.csv';
+EXEC actividades.importarDeportesDisponibles 
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividades.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -454,7 +183,7 @@ SELECT * FROM actividades.deporteDisponible;
 GO
 
 -- ************************************************************************************************
--- Procedimiento: actividades.importarDeportesPileta
+-- Procedimiento: actividades.importarDeportesPileta (3° ejecutar - A MI NO ME FUNCIONA)
 -- Descripción: Este procedimiento se encarga de importar y sincronizar las tarifas y horarios
 --              de la actividad de pileta desde un archivo CSV con una estructura compleja.
 --              Transforma los datos de múltiples filas del CSV en una única fila en la tabla 'actividades.actividadPileta'.
@@ -644,7 +373,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarDeportesPileta
-    @FilePath = 'C:\Importar\dataImport\tarifasActividadesPileta.csv';
+    @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividadesPileta.csv';
 GO
 
 SELECT -- FORMAT(valor, 'C', 'es-AR') para mostrar los valores como moneda local de Argentina
@@ -664,12 +393,293 @@ SELECT -- FORMAT(valor, 'C', 'es-AR') para mostrar los valores como moneda local
     horaAperturaActividad,
     horaCierreActividad,
     vigenciaHasta
-SELECT * FROM
-    actividades.actividadPileta;
+-- SELECT * 
+FROM actividades.actividadPileta;
 GO
 
 -- ************************************************************************************************
--- Procedimiento: actividades.importarPresentismoActividadSocio
+-- Procedimiento: socios.importarGrupoFamiliar (4° ejecutar - A MI NO ME FUNCIONA)
+-- Descripción: Este procedimiento se encarga de importar y sincronizar los datos de los miembros individuales del grupo familiar desde un archivo CSV.
+-- Parámetros:
+--   @FilePath NVARCHAR(255): Ruta completa del archivo CSV de datos del grupo familiar.
+-- ************************************************************************************************
+CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar --REVISAR BIEN EL PORQUE NO ANDA (PARECE SER UN ERROR DE BLOQUEOS O PERMISOS PERO NO LO ENCUENTRO)
+    @FilePath NVARCHAR(255) WITH EXECUTE AS OWNER
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @DefaultTextValue NVARCHAR(50) = 'A completar'; -- Valor por defecto para campos de texto vacíos
+    DECLARE @DefaultDateValue DATE = '1900-01-01';          -- Valor por defecto para fechas inválidas
+    DECLARE @consultaSqlDinamica NVARCHAR(MAX);
+    IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
+        DROP TABLE #StagingGrupoFamiliar;
+    -- Las columnas con espacios en el nombre del CSV se manejan con [].
+    CREATE TABLE #StagingGrupoFamiliar (
+        [Nro de Socio] NVARCHAR(50),
+        [Nro de socio RP] NVARCHAR(50),
+        [Nombre] NVARCHAR(50),
+        [ apellido] NVARCHAR(50),
+        [ DNI] NVARCHAR(10),
+        [ email personal] NVARCHAR(50),
+        [ fecha de nacimiento] NVARCHAR(20),
+        [ teléfono de contacto] NVARCHAR(14),
+        [ teléfono de contacto emergencia] NVARCHAR(14),
+        [Nombre de la obra social o prepaga] NVARCHAR(50),
+        [nro. de socio obra social/prepaga ] NVARCHAR(50),
+        [teléfono de contacto de emergencia ] NVARCHAR(14)
+    );
+    BEGIN TRY
+        -- Construimos la sentencia BULK INSERT de forma dinámica.
+        SET @consultaSqlDinamica = N'BULK INSERT #StagingGrupoFamiliar
+                                     FROM ''' + @FilePath + N'''
+                                     WITH
+                                     (
+                                         FIRSTROW = 2,
+                                         FIELDTERMINATOR = '';'',
+                                         ROWTERMINATOR = ''0x0d0a'',
+										 TABLOCK
+                                     );'; 
+		PRINT 'Usuario actual: ' + SYSTEM_USER;
+		PRINT 'Login actual: ' + ORIGINAL_LOGIN();
+        EXEC sp_executesql @consultaSqlDinamica;
+        -- MERGE nos permite insertar nuevas filas o actualizar existentes en un solo paso.
+        MERGE socios.grupoFamiliar AS Target
+        USING (
+            -- Subconsulta para preparar los datos de origen, realizando transformaciones
+            SELECT
+                -- idGrupoFamiliar: Transformar 'SN-XXXX' a INT. Este será el PK.
+                CAST(REPLACE(st.[Nro de Socio], 'SN-', '') AS INT) AS idMiembroFamiliar,
+                -- idSocioResponsable: Transformar 'SN-XXXX' a INT.
+                CAST(REPLACE(st.[Nro de socio RP], 'SN-', '') AS INT) AS idSocioResponsable,
+                -- Limpiar espacios en nombre y apellido
+                RTRIM(LTRIM(st.Nombre)) AS Nombre,
+                RTRIM(LTRIM(st.[ apellido])) AS Apellido,
+                RTRIM(LTRIM(st.[ DNI])) AS DNI,
+                -- Manejar campos de texto vacíos (NULLIF convierte '' a NULL, ISNULL reemplaza NULL con @DefaultTextValue)
+                ISNULL(NULLIF(RTRIM(LTRIM(st.[ email personal])), ''), @DefaultTextValue) AS EmailPersonal,
+                -- Convertir fecha de nacimiento (DD/MM/YYYY) usando TRY_CONVERT y valor por defecto
+                ISNULL(TRY_CONVERT(DATE, st.[ fecha de nacimiento], 103), @DefaultDateValue) AS FechaNacimiento,
+                ISNULL(NULLIF(RTRIM(LTRIM(st.[ teléfono de contacto])), ''), @DefaultTextValue) AS TelefonoContacto,
+                ISNULL(NULLIF(RTRIM(LTRIM(st.[ teléfono de contacto emergencia])), ''), @DefaultTextValue) AS TelefonoContactoEmergencia,
+                ISNULL(NULLIF(RTRIM(LTRIM(st.[Nombre de la obra social o prepaga])), ''), @DefaultTextValue) AS NombreObraSocial,
+                ISNULL(NULLIF(RTRIM(LTRIM(st.[nro. de socio obra social/prepaga ])), ''), @DefaultTextValue) AS NroSocioObraSocial,
+                ISNULL(NULLIF(RTRIM(LTRIM(st.[teléfono de contacto de emergencia ])), ''), @DefaultTextValue) AS TelefonoObraSocialEmergencia
+            FROM
+                #StagingGrupoFamiliar st -- Los datos que recién cargamos del CSV
+        ) AS Source (idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni, emailPersonal,
+                     fechaNacimiento, telefonoContacto, telefonoContactoEmergencia,
+                     nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia)
+        -- La condición ON para MERGE se basa en la clave primaria de la tabla destino
+        ON Target.idGrupoFamiliar = Source.idGrupoFamiliar
+        WHEN MATCHED THEN
+            UPDATE SET
+                Target.idSocioResponsable = Source.idSocioResponsable,
+                Target.nombre = Source.nombre,
+                Target.apellido = Source.apellido,
+                Target.dni = Source.dni,
+                Target.emailPersonal = Source.emailPersonal,
+                Target.fechaNacimiento = Source.fechaNacimiento,
+                Target.telefonoContacto = Source.telefonoContacto,
+                Target.telefonoContactoEmergencia = Source.telefonoContactoEmergencia,
+                Target.nombreObraSocial = Source.nombreObraSocial,
+                Target.nroSocioObraSocial = Source.nroSocioObraSocial,
+                Target.telefonoObraSocialEmergencia = Source.telefonoObraSocialEmergencia
+        WHEN NOT MATCHED THEN
+            INSERT (idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni, emailPersonal,
+                    fechaNacimiento, telefonoContacto, telefonoContactoEmergencia,
+                    nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia)
+            VALUES (Source.idGrupoFamiliar, Source.idSocioResponsable, Source.nombre, Source.apellido, Source.dni, Source.emailPersonal,
+                    Source.fechaNacimiento, Source.telefonoContacto, Source.telefonoContactoEmergencia,
+                    Source.nombreObraSocial, Source.nroSocioObraSocial, Source.telefonoObraSocialEmergencia);
+        PRINT 'Datos de miembros del grupo familiar importados/actualizados con exito!';
+    END TRY
+    BEGIN CATCH
+        -- Manejo de Errores
+        DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
+        DECLARE @SeveridadError INT = ERROR_SEVERITY();
+        DECLARE @EstadoError INT = ERROR_STATE();
+        RAISERROR(@MensajeError, @SeveridadError, @EstadoError);
+    END CATCH;
+    IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
+        DROP TABLE #StagingGrupoFamiliar;
+END;
+GO
+
+-- CARGAR DATOS DEL CSV
+EXEC socios.importarGrupoFamiliar
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\grupoFamiliar.csv';
+GO
+
+SELECT 
+  rp.name AS RoleName, 
+  mp.name AS MemberName 
+FROM sys.server_role_members m
+JOIN sys.server_principals rp ON m.role_principal_id = rp.principal_id
+JOIN sys.server_principals mp ON m.member_principal_id = mp.principal_id
+WHERE rp.name = 'bulkadmin';
+
+-- VER DATOS CARGADOS
+SELECT * FROM socios.grupoFamiliar;
+GO
+
+-- ========================================================================
+-- Procedimiento: pagos.importarPagosCuotas (5° ejecutar - FUNCIONA)
+-- Descripción: Importa datos de pagos de cuotas desde "pagoCuotas.csv" a la tabla 'pagos.cobroFactura'.
+-- Parámetros:
+--   @FilePath NVARCHAR(255): Ruta completa del archivo CSV,
+-- ========================================================================
+CREATE OR ALTER PROCEDURE pagos.importarPagosCuotas
+    @FilePath NVARCHAR(255)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @DynamicSql NVARCHAR(MAX);
+
+    -- Limpiar tablas temporales si existen de una ejecución anterior
+    IF OBJECT_ID('tempdb..#StagingPagosCuotas') IS NOT NULL
+        DROP TABLE #StagingPagosCuotas;
+    IF OBJECT_ID('tempdb..#ProcessedCobros') IS NOT NULL
+        DROP TABLE #ProcessedCobros;
+
+    CREATE TABLE #StagingPagosCuotas (
+        IdDePagoCsv NVARCHAR(50),
+        FechaCsv NVARCHAR(50),
+        ResponsableDePagoCsv NVARCHAR(50), -- SN-XXXX
+        ValorCsv NVARCHAR(50),
+        MedioDePagoCsv NVARCHAR(50)
+    );
+
+    BEGIN TRY
+        SET @DynamicSql = N'BULK INSERT #StagingPagosCuotas
+                             FROM ''' + @FilePath + N'''
+                             WITH
+                             (
+                                 FIRSTROW = 2, -- Omitir encabezados
+                                 FIELDTERMINATOR = '';'', -- Separador de columnas
+                                 ROWTERMINATOR = ''0x0d0a'', -- CRLF para Windows
+                                 TABLOCK                     
+                             );';
+        
+        EXEC sp_executesql @DynamicSql;
+        PRINT '--- Depuración: Después de BULK INSERT ---';
+        SELECT COUNT(*) AS 'Count_StagingPagosCuotas' FROM #StagingPagosCuotas;
+        --SELECT TOP 10 * FROM #StagingPagosCuotas;
+		--SELECT * FROM #StagingPagosCuotas;
+        PRINT '-----------------------------------------';
+
+        CREATE TABLE #ProcessedCobros (
+            idCobro BIGINT PRIMARY KEY,
+            idSocio INT,
+            categoriaSocio INT,
+            fechaEmisionCobro DATE,
+            nombreSocio VARCHAR(50),
+            apellidoSocio VARCHAR(50),
+            cuilDeudor VARCHAR(13),
+            domicilio VARCHAR(50),
+            modalidadCobro VARCHAR(25),
+            numeroCuota INT,
+            totalAbonado DECIMAL(10, 2)
+        );
+
+        INSERT INTO #ProcessedCobros (
+            idCobro, idSocio, categoriaSocio, fechaEmisionCobro, 
+            nombreSocio, apellidoSocio, cuilDeudor, domicilio, 
+            modalidadCobro, numeroCuota, totalAbonado
+        )
+        SELECT
+            CASE WHEN ISNUMERIC(sp.IdDePagoCsv) = 1 THEN CAST(sp.IdDePagoCsv AS BIGINT) ELSE NULL END AS idCobro,
+            CAST(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv)) AS INT) AS idSocio,
+            s.categoriaSocio,
+            -- ********************************************
+            ISNULL(TRY_CONVERT(DATE, sp.FechaCsv, 103), '2025-01-01') AS fechaEmisionCobro,
+            -- ********************************************
+            s.nombre AS nombreSocio,
+            s.apellido AS apellidoSocio,
+            s.dni AS cuilDeudor,
+            s.direccion AS domicilio,
+            TRIM(sp.MedioDePagoCsv) AS modalidadCobro,
+            1 AS numeroCuota,
+            CASE WHEN ISNUMERIC(sp.ValorCsv) = 1 THEN CAST(sp.ValorCsv AS DECIMAL(10,2)) ELSE 0.00 END AS totalAbonado
+        FROM
+            #StagingPagosCuotas sp
+        INNER JOIN
+            socios.socio s ON CAST(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv)) AS INT) = s.idSocio
+        WHERE
+            ISNUMERIC(sp.IdDePagoCsv) = 1
+            AND ISNUMERIC(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv))) = 1
+            AND ISNUMERIC(sp.ValorCsv) = 1;
+
+        PRINT '--- Depuración: Después de la inserción en #ProcessedCobros ---';
+        SELECT COUNT(*) AS 'Count_ProcessedCobros' FROM #ProcessedCobros;
+        SELECT TOP 10 * FROM #ProcessedCobros;
+
+        PRINT '--- Fechas en FechaCsv (Staging) que NO pudieron convertirse a DATE (DD/MM/YYYY) ---';
+        SELECT DISTINCT FechaCsv
+        FROM #StagingPagosCuotas
+        WHERE TRY_CONVERT(DATE, FechaCsv, 103) IS NULL;
+        PRINT '-----------------------------------------------------------------------------------';
+
+        PRINT '--- IDs de Socio del CSV (Staging) que NO tienen match en la tabla socios.socio ---';
+        SELECT DISTINCT
+            CAST(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv)) AS INT) AS idSocio_SinMatch_en_Socios
+        FROM #StagingPagosCuotas sp
+        LEFT JOIN socios.socio s ON CAST(SUBSTRING(sp.ResponsableDePagoCsv, CHARINDEX('-', sp.ResponsableDePagoCsv) + 1, LEN(sp.ResponsableDePagoCsv)) AS INT) = s.idSocio
+        WHERE s.idSocio IS NULL;
+        PRINT '-------------------------------------------------------------';
+
+        MERGE pagos.cobroFactura AS Target
+        USING #ProcessedCobros AS Source
+        ON (Target.idCobro = Source.idCobro)
+        WHEN MATCHED THEN
+            UPDATE SET
+                Target.idSocio = Source.idSocio,
+                Target.categoriaSocio = Source.categoriaSocio,
+                Target.fechaEmisionCobro = Source.fechaEmisionCobro,
+                Target.nombreSocio = Source.nombreSocio,
+                Target.apellidoSocio = Source.apellidoSocio,
+                Target.cuilDeudor = Source.cuilDeudor,
+                Target.domicilio = Source.domicilio,
+                Target.modalidadCobro = Source.modalidadCobro,
+                Target.numeroCuota = Source.numeroCuota,
+                Target.totalAbonado = Source.totalAbonado
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT (
+                idCobro, idSocio, categoriaSocio, fechaEmisionCobro, 
+                nombreSocio, apellidoSocio, cuilDeudor, domicilio, 
+                modalidadCobro, numeroCuota, totalAbonado, idFacturaCobrada
+            )
+            VALUES (
+                Source.idCobro, Source.idSocio, Source.categoriaSocio, Source.fechaEmisionCobro,
+                Source.nombreSocio, Source.apellidoSocio, Source.cuilDeudor, Source.domicilio,
+                Source.modalidadCobro, Source.numeroCuota, Source.totalAbonado, NULL
+            );
+
+        PRINT '¡Datos de pagos de cuotas importados/actualizados con exito!';
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+        RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);
+    END CATCH;
+    IF OBJECT_ID('tempdb..#StagingPagosCuotas') IS NOT NULL
+        DROP TABLE #StagingPagosCuotas;
+    IF OBJECT_ID('tempdb..#ProcessedCobros') IS NOT NULL
+        DROP TABLE #ProcessedCobros;
+END;
+GO
+
+-- CARGAR DATOS DEL CSV
+EXEC pagos.importarPagosCuotas
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\pagoCuotas.csv';
+GO
+
+-- VER DATOS CARGADOS
+SELECT * FROM pagos.cobroFactura;
+GO
+
+-- ************************************************************************************************
+-- Procedimiento: actividades.importarPresentismoActividadSocio (6° ejecutar - FUNCIONA)
 -- Descripcion: Este procedimiento se encarga de importar los registros de presentismo de las actividades de los socios desde un archivo CSV.
 -- Parametros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV a importar.
@@ -683,7 +693,6 @@ BEGIN
     IF OBJECT_ID('tempdb..#TablaDeCargaTemporal') IS NOT NULL
         DROP TABLE #TablaDeCargaTemporal;
     -- Es crucial que el numero de columnas aqui coincida con el numero de columnas del CSV, incluyendo las vacias.
-    -- (Para este caso identificamos 9 columnas: 5 de datos reales + 4 columnas vacias adicionales)
     CREATE TABLE #TablaDeCargaTemporal (
         NumeroDeSocioCsv NVARCHAR(50),
         ActividadCsv NVARCHAR(50),
@@ -695,70 +704,68 @@ BEGIN
         ColumnaVacia3 NVARCHAR(50),
         ColumnaVacia4 NVARCHAR(50)
     );
-    -- Manejo de errores: Si algo sale mal, capturamos el error
     BEGIN TRY
-        -- Construimos la sentencia BULK INSERT de forma dinamica. Esto es necesario porque la ruta del archivo CSV es una variable.
         SET @consultaSqlDinamica = N'BULK INSERT #TablaDeCargaTemporal
                                      FROM ''' + @FilePath + N'''
                                      WITH
                                      (
-                                         FIRSTROW = 2,            -- Empezamos a leer desde la segunda fila (por el encabezado)
-                                         FIELDTERMINATOR = '';'', -- Los campos estan separados por ;
-                                         ROWTERMINATOR = ''0x0a'',-- El final de cada fila se identifica con un salto de linea
-                                         TABLOCK                  -- Ayuda a optimizar la carga masiva bloqueando la tabla temporal
+                                         FIRSTROW = 2,
+                                         FIELDTERMINATOR = '';'',
+                                         ROWTERMINATOR = ''0x0a'',
+                                         TABLOCK
                                      );';
-        -- Ejecutamos la consulta BULK INSERT que acabamos de construir
         EXEC sp_executesql @consultaSqlDinamica;
-        -- MERGE nos permite insertar nuevas filas o actualizar existentes en un solo paso.
+        PRINT 'BULK INSERT completado. Filas cargadas en #TablaDeCargaTemporal: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
+        -- Depuración: Mostrar algunas filas de la tabla temporal
+        -- PRINT 'Top 10 filas de #TablaDeCargaTemporal:';
+        -- SELECT TOP 10 * FROM #TablaDeCargaTemporal;
+
+        -- MERGE para insertar/actualizar datos en actividades.presentismoActividadSocio
         MERGE actividades.presentismoActividadSocio AS TablaDestino
         USING (
-            -- Preparamos los datos de ORIGEN para la sincronizacion y realizamos INNER JOIN para validar los datos
             SELECT
-                CAST(REPLACE(st.NumeroDeSocioCsv, 'SN-', '') AS INT) AS idSocioFinal, -- Transformamos el numero de socio (ej. 'SN-4148' a 4148)
+                CAST(REPLACE(st.NumeroDeSocioCsv, 'SN-', '') AS INT) AS idSocioFinal,
                 da.idDeporteActivo,
-                CONVERT(DATE, st.FechaAsistenciaCsv, 103) AS FechaDeAsistenciaFinal,
+                -- Usar TRY_CONVERT para manejar fechas inválidas y asignar una por defecto si falla
+                ISNULL(TRY_CONVERT(DATE, st.FechaAsistenciaCsv, 103), '2025-01-01') AS FechaDeAsistenciaFinal,
                 st.EstadoAsistenciaCsv AS EstadoPresentismoFinal,
                 st.ProfesorCsv AS ProfesorAsociado
             FROM
                 #TablaDeCargaTemporal st
             INNER JOIN
-                actividades.deporteDisponible dd ON st.ActividadCsv = dd.descripcion -- Solo procesamos filas si la 'Actividad' del CSV existe en nuestra tabla 'deporteDisponible'
+                actividades.deporteDisponible dd ON st.ActividadCsv = dd.descripcion
             INNER JOIN
                 actividades.deporteActivo da ON CAST(REPLACE(st.NumeroDeSocioCsv, 'SN-', '') AS INT) = da.idSocio
-                                            AND dd.idDeporte = da.idDeporte -- Solo procesamos filas si el socio ya esta asociado a ese deporte en nuestra tabla 'deporteActivo'
+                                            AND dd.idDeporte = da.idDeporte
         ) AS TablaOrigen (idSocio, idDeporteActivo, fechaActividad, estadoPresentismo, profesorDeporte)
-        -- Definimos las condiciones para saber si una fila ya existe en la tabla destino.
         ON TablaDestino.idSocio = TablaOrigen.idSocio
            AND TablaDestino.idDeporteActivo = TablaOrigen.idDeporteActivo
            AND TablaDestino.fechaActividad = TablaOrigen.fechaActividad
-        -- Si la fila ya existe en la tabla destino (coincide con las 3 condiciones de arriba)
         WHEN MATCHED THEN
             UPDATE SET
-                TablaDestino.estadoPresentismo = TablaOrigen.estadoPresentismo, -- Actualizamos el estado
-                TablaDestino.profesorDeporte = TablaOrigen.profesorDeporte      -- Profesor
-        -- Si la fila NO existe en la tabla destino (no coincide con las 3 condiciones)
+                TablaDestino.estadoPresentismo = TablaOrigen.estadoPresentismo,
+                TablaDestino.profesorDeporte = TablaOrigen.profesorDeporte
         WHEN NOT MATCHED THEN
             INSERT (idSocio, idDeporteActivo, fechaActividad, estadoPresentismo, profesorDeporte)
             VALUES (TablaOrigen.idSocio, TablaOrigen.idDeporteActivo, TablaOrigen.fechaActividad, TablaOrigen.estadoPresentismo, TablaOrigen.profesorDeporte);
-        -- Mensaje de exito al usuario
+
         PRINT 'Proceso de importacion de presentismo completado con exito!';
+        --PRINT 'Filas afectadas por MERGE: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
     END TRY
     BEGIN CATCH
         DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
         DECLARE @SeveridadError INT = ERROR_SEVERITY();
         DECLARE @EstadoError INT = ERROR_STATE();
-        -- Lanzamos el error capturado
         RAISERROR(@MensajeError, @SeveridadError, @EstadoError);
     END CATCH;
-    -- Eliminamos la tabla temporal para liberar recursos
     IF OBJECT_ID('tempdb..#TablaDeCargaTemporal') IS NOT NULL
         DROP TABLE #TablaDeCargaTemporal;
 END;
 GO
 
 -- CARGAR DATOS DEL CSV
-EXEC actividades.importarPresentismoActividadSocio 
-	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\presentismo_actividades.csv';
+EXEC actividades.importarPresentismoActividadSocio
+    @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\presentismoActividades.csv';
 GO
 
 -- VER DATOS CARGADOS

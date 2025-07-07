@@ -1,43 +1,40 @@
+
 ----------------------------------------------------------------------------------------------------
--- Fecha de entrega: 15-06-2025
+-- Fecha de entrega: 01-07-2025
 -- Numero de grupo: 3
 -- Materia: Bases de Datos Aplicada
 -- Alumnos:
 --   - Codina, Santiago Ivan - 44.391.352
 --   - Santillan, Lautaro Ezequiel - 45.175.053
 ----------------------------------------------------------------------------------------------------
--- Crear la base de datos
+
+-- ************************************************************************************************
+-- CREAR BASE DE DATOS
+-- ************************************************************************************************
 CREATE DATABASE Com2900G03;
 GO
 -- Usar la base de datos
 USE Com2900G03;
 GO
 
--- Creación de esquemas para las diferentes gestiones (si no existen)
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'socios')
-    EXEC('CREATE SCHEMA socios;');
-GO
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'actividades')
-    EXEC('CREATE SCHEMA actividades;');
-GO
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'pagos')
-    EXEC('CREATE SCHEMA pagos;');
-GO
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'descuentos')
-    EXEC('CREATE SCHEMA descuentos;');
-GO
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'itinerarios')
-    EXEC('CREATE SCHEMA itinerarios;');
-GO
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'coberturas')
-    EXEC('CREATE SCHEMA coberturas;');
-GO
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'reservas')
-    EXEC('CREATE SCHEMA reservas;');
+-- ************************************************************************************************
+-- CREACION DE SCHEMAS
+-- ************************************************************************************************
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name IN ('socios', 'actividades', 'pagos', 'descuentos', 'itinerarios', 'coberturas', 'reservas'))
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'socios') EXEC('CREATE SCHEMA socios;');
+    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'actividades') EXEC('CREATE SCHEMA actividades;');
+    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'pagos') EXEC('CREATE SCHEMA pagos;');
+    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'descuentos') EXEC('CREATE SCHEMA descuentos;');
+    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'itinerarios') EXEC('CREATE SCHEMA itinerarios;');
+    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'coberturas') EXEC('CREATE SCHEMA coberturas;');
+    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'reservas') EXEC('CREATE SCHEMA reservas;');
+END
 GO
 
--- Creacion de tablas
-
+-- ************************************************************************************************
+-- CREACION DE TABLAS
+-- ************************************************************************************************
 -- 1. Creación de tablas sin dependencias de clave foránea directas, o con claves primarias referenciables.
 
 -- 1.1 socios.categoriaSocio
@@ -45,8 +42,8 @@ CREATE TABLE socios.categoriaMembresiaSocio (
     idCategoria INT PRIMARY KEY IDENTITY(1,1),
     tipo VARCHAR(15) NOT NULL,
     costoMembresia DECIMAL(10, 2) NOT NULL CHECK (costoMembresia > 0),
-	vigenciaHasta DATE NOT NULL,
-	estadoCategoriaSocio BIT NOT NULL CONSTRAINT categoriaSocio_actividad DEFAULT(1)
+	  vigenciaHasta DATE NOT NULL,
+	  estadoCategoriaSocio BIT NOT NULL CONSTRAINT categoriaSocio_actividad DEFAULT(1)
 );
 GO
 
@@ -54,7 +51,7 @@ GO
 CREATE TABLE socios.rolDisponible (
     idRol INT NOT NULL CHECK (idRol > 0) PRIMARY KEY,
     descripcion VARCHAR(50) NOT NULL,
-	estadoRol BIT NOT NULL CONSTRAINT estadoActividad DEFAULT (1)
+	  estadoRol BIT NOT NULL CONSTRAINT estadoActividad DEFAULT (1)
 );
 GO
 
@@ -77,11 +74,11 @@ GO
 
 -- 1.4 actividades.deporteDisponible
 CREATE TABLE actividades.deporteDisponible (
-	idDeporte INT PRIMARY KEY IDENTITY(1,1),
+	  idDeporte INT PRIMARY KEY IDENTITY(1,1),
     descripcion VARCHAR(20) NOT NULL,
     tipo VARCHAR(10), -- Capaz conviene eliminarlo
-	costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0) NOT NULL,
-	vigenciaHasta DATE NOT NULL
+	  costoPorMes DECIMAL(10, 2) CHECK (costoPorMes > 0) NOT NULL,
+	  vigenciaHasta DATE NOT NULL
 );
 GO
 
@@ -199,7 +196,7 @@ CREATE TABLE socios.saldoAFavorSocio (
 CREATE TABLE socios.rolVigente (
     idRol INT NOT NULL CHECK (idRol > 0),
     idSocio INT NOT NULL CHECK (idSocio > 0),
-	estadoRolVigente BIT NOT NULL CONSTRAINT estadoVigencia DEFAULT (1),
+	  estadoRolVigente BIT NOT NULL CONSTRAINT estadoVigencia DEFAULT (1),
     CONSTRAINT PK_rolVigente PRIMARY KEY (idRol, idSocio),
     FOREIGN KEY (idRol) REFERENCES socios.rolDisponible(idRol),
     FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
@@ -223,7 +220,7 @@ CREATE TABLE actividades.deporteActivo (
     idDeporteActivo INT PRIMARY KEY IDENTITY(1,1),
     idSocio INT NOT NULL,
     idDeporte INT NOT NULL,
-	estadoActividadDeporte VARCHAR(8) NOT NULL CHECK (estadoActividadDeporte IN ('Activo', 'Inactivo')),
+	  estadoActividadDeporte VARCHAR(8) NOT NULL CHECK (estadoActividadDeporte IN ('Activo', 'Inactivo')),
     estadoMembresia VARCHAR(22) NOT NULL CHECK (estadoMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
     FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
     FOREIGN KEY (idDeporte) REFERENCES actividades.deporteDisponible(idDeporte)
@@ -400,7 +397,7 @@ CREATE TABLE actividades.presentismoActividadSocio (
     fechaActividad DATE NOT NULL,
     estadoPresentismo VARCHAR(1) NOT NULL CHECK (estadoPresentismo in ('P', 'A', 'J')), -- (P)RESENTE, (A)usente y Ausente (J)ustificado
     profesorDeporte VARCHAR(35) NOT NULL,
-    CONSTRAINT PK_presentismoActividadSocio PRIMARY KEY (idSocio, idDeporteActivo),
+	CONSTRAINT PK_presentismoActividadSocio PRIMARY KEY (idSocio, idDeporteActivo, fechaActividad),
     FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio),
     FOREIGN KEY (idDeporteActivo) REFERENCES actividades.deporteActivo(idDeporteActivo)
 );
@@ -532,8 +529,6 @@ END;
 GO
 
 --socio
-
-
 CREATE OR ALTER PROCEDURE socios.registrarNuevoSocio
   @fechaIngreso           DATE,
   @primerUsuario          VARCHAR(50),
@@ -757,7 +752,6 @@ BEGIN
   WHERE idSocio = @idSocio;
 END;
 GO
-
 
 CREATE OR ALTER PROCEDURE socios.eliminarSocioLogico
   @idSocio INT
