@@ -11,6 +11,239 @@
 USE Com2900G03;
 GO
 
+ALTER LOGIN sa WITH PASSWORD = 'OchoDel12!';
+GO
+
+SELECT name
+     , is_disabled
+     , type_desc
+  FROM sys.sql_logins
+ WHERE name = 'sa';
+
+ ALTER LOGIN sa WITH PASSWORD = 'M1x3dMode!2025';
+GO
+
+DECLARE @loginMode INT;
+EXEC xp_instance_regread  
+    N'HKEY_LOCAL_MACHINE',
+    N'Software\Microsoft\MSSQLServer\MSSQLServer',
+    N'LoginMode',
+    @loginMode OUTPUT;
+
+SELECT @loginMode AS LoginMode;
+
+-- ************************************************************************************************
+-- Procedimiento: socios.importarGrupoFamiliar (4° ejecutar)
+-- Descripción: Este procedimiento se encarga de importar y sincronizar los datos de los miembros individuales del grupo familiar desde un archivo CSV.
+-- Parámetros:
+--   @FilePath NVARCHAR(255): Ruta completa del archivo CSV de datos del grupo familiar.
+-- ************************************************************************************************
+
+EXEC sp_configure 'show advanced options', 1; RECONFIGURE;  
+EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;  
+
+-- ¿Puede verlo el motor?
+EXEC xp_cmdshell 'dir "C:\Importar\dataImport\grupoFamiliar.csv"';
+
+CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar
+  @FilePath NVARCHAR(255)
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
+    DROP TABLE #StagingGrupoFamiliar;
+
+  -- 1) Creamos la tabla temporal
+  CREATE TABLE #StagingGrupoFamiliar (
+      [Nro de Socio]                        NVARCHAR(50),
+      [Nro de socio RP]                     NVARCHAR(50),
+      [Nombre]                              NVARCHAR(50),
+      [ apellido]                           NVARCHAR(50),
+      [ DNI]                                NVARCHAR(10),
+      [ email personal]                     NVARCHAR(50),
+      [ fecha de nacimiento]                NVARCHAR(20),
+      [ teléfono de contacto]               NVARCHAR(50),
+      [ teléfono de contacto emergencia]    NVARCHAR(50),
+      [Nombre de la obra social o prepaga]  NVARCHAR(50),
+      [nro. de socio obra social/prepaga ]  NVARCHAR(50),
+      [teléfono de contacto de emergencia ] NVARCHAR(50)
+  );
+
+  BEGIN TRY
+    -- 2) Construimos y ejecutamos la sentencia BULK INSERT en dinámico
+    DECLARE @sql NVARCHAR(MAX) =  
+      N'BULK INSERT #StagingGrupoFamiliar
+        FROM ''' + REPLACE(@FilePath,'''','''''') + N'''
+        WITH
+        (
+          FIRSTROW        = 2,
+          FIELDTERMINATOR = '';'',
+          ROWTERMINATOR   = ''0x0a'',
+          CODEPAGE        = ''65001'',
+          MAXERRORS       = 1000
+        );';
+
+    EXEC sp_executesql @sql;
+
+    -- 3) Ahora hacemos el MERGE contra socios.grupoFamiliar
+    MERGE socios.grupoFamiliar AS Target
+    USING (
+      SELECT
+        CAST(REPLACE([Nro de Socio], 'SN-', '') AS INT)            AS idGrupoFamiliar,
+        CAST(REPLACE([Nro de socio RP], 'SN-', '') AS INT)         AS idSocioResponsable,
+        RTRIM(LTRIM([Nombre]))                                     AS nombre,
+        RTRIM(LTRIM([ apellido]))                                  AS apellido,
+        RTRIM(LTRIM([ DNI]))                                       AS dni,
+        [ email personal]                                          AS emailPersonal,
+        TRY_CONVERT(DATE, [ fecha de nacimiento], 103)             AS fechaNacimiento,
+        [ teléfono de contacto]                                    AS telefonoContacto,
+        [ teléfono de contacto emergencia]                         AS telefonoContactoEmergencia,
+        [Nombre de la obra social o prepaga]                       AS nombreObraSocial,
+        [nro. de socio obra social/prepaga ]                       AS nroSocioObraSocial,
+        [teléfono de contacto de emergencia ]                      AS telefonoObraSocialEmergencia
+      FROM #StagingGrupoFamiliar
+    ) AS Source
+    ON Target.idGrupoFamiliar = Source.idGrupoFamiliar
+    WHEN MATCHED THEN
+      UPDATE SET
+        Target.idSocioResponsable         = Source.idSocioResponsable,
+        Target.nombre                     = Source.nombre,
+        Target.apellido                   = Source.apellido,
+        Target.dni                        = Source.dni,
+        Target.emailPersonal              = Source.emailPersonal,
+        Target.fechaNacimiento            = Source.fechaNacimiento,
+        Target.telefonoContacto           = Source.telefonoContacto,
+        Target.telefonoContactoEmergencia = Source.telefonoContactoEmergencia,
+        Target.nombreObraSocial           = Source.nombreObraSocial,
+        Target.nroSocioObraSocial         = Source.nroSocioObraSocial,
+        Target.telefonoObraSocialEmergencia = Source.telefonoObraSocialEmergencia
+    WHEN NOT MATCHED THEN
+      INSERT (
+        idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni,
+        emailPersonal, fechaNacimiento, telefonoContacto,
+        telefonoContactoEmergencia,
+        nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia
+      )
+      VALUES (
+        Source.idGrupoFamiliar, Source.idSocioResponsable,
+        Source.nombre, Source.apellido, Source.dni,
+        Source.emailPersonal, Source.fechaNacimiento,
+        Source.telefonoContacto,
+        Source.telefonoContactoEmergencia,
+        Source.nombreObraSocial,
+        Source.nroSocioObraSocial,
+        Source.telefonoObraSocialEmergencia
+      );
+
+    PRINT 'Datos de miembros del grupo familiar importados/actualizados con éxito!';
+  END TRY
+  BEGIN CATCH
+    DECLARE 
+      @ErrorMsg NVARCHAR(4000) = ERROR_MESSAGE(),
+      @ErrorSev INT             = ERROR_SEVERITY(),
+      @ErrorState INT           = ERROR_STATE();
+    RAISERROR(@ErrorMsg, @ErrorSev, @ErrorState);
+  END CATCH;
+
+  DROP TABLE IF EXISTS #StagingGrupoFamiliar;
+END;
+GO
+
+USE master;
+GO
+ALTER SERVER ROLE bulkadmin ADD MEMBER [LA-BESTIA\santi];
+GO
+ALTER SERVER ROLE bulkadmin ADD MEMBER [MicrosoftAccount\santiagocodina@live.com.ar];
+GO
+
+ALTER DATABASE [Com2900G03] SET TRUSTWORTHY ON;
+GO
+USE Com2900G03;
+CREATE CERTIFICATE Cert_BulkImport
+  ENCRYPTION BY PASSWORD = 'StrongPass#1'
+  WITH SUBJECT = 'Cert para BULK INSERT';
+GO
+
+ADD SIGNATURE TO OBJECT::socios.importarGrupoFamiliar
+  BY CERTIFICATE Cert_BulkImport
+  WITH PASSWORD = 'StrongPass#1';
+GO
+
+CREATE USER CertUser FROM CERTIFICATE Cert_BulkImport;
+GRANT ADMINISTER BULK OPERATIONS TO CertUser;
+GO
+
+SELECT 
+  CASE WHEN SUSER_SNAME() = 'sa' THEN 1 ELSE 0 END AS EsLoginSA;
+  -- Lista todos los logins con sysadmin
+
+-- CARGAR DATOS DEL CSV
+USE Com2900G03;
+GO
+
+EXEC socios.importarGrupoFamiliar
+  @FilePath = N'C:\Importar\dataImport\grupoFamiliar.csv';
+GO
+
+SELECT servicename,
+       service_account
+  FROM sys.dm_server_services
+ WHERE servicename LIKE 'SQL Server (%';  -- Filtra solo instancias
+
+SELECT *
+FROM OPENROWSET(
+   BULK N'C:\Importar\dataImport\grupoFamiliar.csv',
+   FORMAT = 'CSV',
+   FIRSTROW = 2
+) AS Data;
+
+-- 1) En Com2900G03, “respaldar” el certificado a un fichero .cer
+USE Com2900G03;
+GO
+BACKUP CERTIFICATE Cert_BulkImport
+  TO FILE = 'C:\Temp\Cert_BulkImport.cer';
+GO
+
+-- 2) En master, crear un certificado a partir de ese fichero
+USE master;
+GO
+CREATE CERTIFICATE Cert_BulkImport_Master
+  FROM FILE = 'C:\Temp\Cert_BulkImport.cer';
+GO
+
+-- 3) Crear el login asociado al certificado en master
+CREATE LOGIN CertLogin
+  FROM CERTIFICATE Cert_BulkImport_Master;
+GO
+
+-- 4) Concederle el permiso de BULK INSERT
+GRANT ADMINISTER BULK OPERATIONS TO CertLogin;
+GO
+
+SELECT servicename, service_account
+  FROM sys.dm_server_services
+  WHERE servicename LIKE 'SQL Server (%';
+
+SELECT 
+  rp.name AS RoleName, 
+  mp.name AS MemberName 
+FROM sys.server_role_members m
+JOIN sys.server_principals rp ON m.role_principal_id = rp.principal_id
+JOIN sys.server_principals mp ON m.member_principal_id = mp.principal_id
+WHERE rp.name = 'bulkadmin';
+
+-- VER DATOS CARGADOS
+SELECT * FROM socios.grupoFamiliar;
+GO
+
+SELECT SUSER_SNAME()      AS LoginActual,  
+       ORIGINAL_LOGIN()   AS LoginOriginal,  
+       SYSTEM_USER        AS UsuarioSQL;
+
+	   ALTER SERVER ROLE bulkadmin ADD MEMBER [LA-BESTIA\santi];
+GO
+
 -- ************************************************************************************************
 -- Procedimiento: socios.importarCategoriasSocio (1° ejecutar - FUNCIONA)
 -- Descripción: Este procedimiento se encarga de importar y sincronizar las categorías de membresía de socios desde un archivo CSV.
@@ -403,124 +636,7 @@ GO
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV de datos del grupo familiar.
 -- ************************************************************************************************
-CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar --REVISAR BIEN EL PORQUE NO ANDA (PARECE SER UN ERROR DE BLOQUEOS O PERMISOS PERO NO LO ENCUENTRO)
-    @FilePath NVARCHAR(255) WITH EXECUTE AS OWNER
-AS
-BEGIN
-    SET NOCOUNT ON;
-    DECLARE @DefaultTextValue NVARCHAR(50) = 'A completar'; -- Valor por defecto para campos de texto vacíos
-    DECLARE @DefaultDateValue DATE = '1900-01-01';          -- Valor por defecto para fechas inválidas
-    DECLARE @consultaSqlDinamica NVARCHAR(MAX);
-    IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
-        DROP TABLE #StagingGrupoFamiliar;
-    -- Las columnas con espacios en el nombre del CSV se manejan con [].
-    CREATE TABLE #StagingGrupoFamiliar (
-        [Nro de Socio] NVARCHAR(50),
-        [Nro de socio RP] NVARCHAR(50),
-        [Nombre] NVARCHAR(50),
-        [ apellido] NVARCHAR(50),
-        [ DNI] NVARCHAR(10),
-        [ email personal] NVARCHAR(50),
-        [ fecha de nacimiento] NVARCHAR(20),
-        [ teléfono de contacto] NVARCHAR(14),
-        [ teléfono de contacto emergencia] NVARCHAR(14),
-        [Nombre de la obra social o prepaga] NVARCHAR(50),
-        [nro. de socio obra social/prepaga ] NVARCHAR(50),
-        [teléfono de contacto de emergencia ] NVARCHAR(14)
-    );
-    BEGIN TRY
-        -- Construimos la sentencia BULK INSERT de forma dinámica.
-        SET @consultaSqlDinamica = N'BULK INSERT #StagingGrupoFamiliar
-                                     FROM ''' + @FilePath + N'''
-                                     WITH
-                                     (
-                                         FIRSTROW = 2,
-                                         FIELDTERMINATOR = '';'',
-                                         ROWTERMINATOR = ''0x0d0a'',
-										 TABLOCK
-                                     );'; 
-		PRINT 'Usuario actual: ' + SYSTEM_USER;
-		PRINT 'Login actual: ' + ORIGINAL_LOGIN();
-        EXEC sp_executesql @consultaSqlDinamica;
-        -- MERGE nos permite insertar nuevas filas o actualizar existentes en un solo paso.
-        MERGE socios.grupoFamiliar AS Target
-        USING (
-            -- Subconsulta para preparar los datos de origen, realizando transformaciones
-            SELECT
-                -- idGrupoFamiliar: Transformar 'SN-XXXX' a INT. Este será el PK.
-                CAST(REPLACE(st.[Nro de Socio], 'SN-', '') AS INT) AS idMiembroFamiliar,
-                -- idSocioResponsable: Transformar 'SN-XXXX' a INT.
-                CAST(REPLACE(st.[Nro de socio RP], 'SN-', '') AS INT) AS idSocioResponsable,
-                -- Limpiar espacios en nombre y apellido
-                RTRIM(LTRIM(st.Nombre)) AS Nombre,
-                RTRIM(LTRIM(st.[ apellido])) AS Apellido,
-                RTRIM(LTRIM(st.[ DNI])) AS DNI,
-                -- Manejar campos de texto vacíos (NULLIF convierte '' a NULL, ISNULL reemplaza NULL con @DefaultTextValue)
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[ email personal])), ''), @DefaultTextValue) AS EmailPersonal,
-                -- Convertir fecha de nacimiento (DD/MM/YYYY) usando TRY_CONVERT y valor por defecto
-                ISNULL(TRY_CONVERT(DATE, st.[ fecha de nacimiento], 103), @DefaultDateValue) AS FechaNacimiento,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[ teléfono de contacto])), ''), @DefaultTextValue) AS TelefonoContacto,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[ teléfono de contacto emergencia])), ''), @DefaultTextValue) AS TelefonoContactoEmergencia,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[Nombre de la obra social o prepaga])), ''), @DefaultTextValue) AS NombreObraSocial,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[nro. de socio obra social/prepaga ])), ''), @DefaultTextValue) AS NroSocioObraSocial,
-                ISNULL(NULLIF(RTRIM(LTRIM(st.[teléfono de contacto de emergencia ])), ''), @DefaultTextValue) AS TelefonoObraSocialEmergencia
-            FROM
-                #StagingGrupoFamiliar st -- Los datos que recién cargamos del CSV
-        ) AS Source (idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni, emailPersonal,
-                     fechaNacimiento, telefonoContacto, telefonoContactoEmergencia,
-                     nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia)
-        -- La condición ON para MERGE se basa en la clave primaria de la tabla destino
-        ON Target.idGrupoFamiliar = Source.idGrupoFamiliar
-        WHEN MATCHED THEN
-            UPDATE SET
-                Target.idSocioResponsable = Source.idSocioResponsable,
-                Target.nombre = Source.nombre,
-                Target.apellido = Source.apellido,
-                Target.dni = Source.dni,
-                Target.emailPersonal = Source.emailPersonal,
-                Target.fechaNacimiento = Source.fechaNacimiento,
-                Target.telefonoContacto = Source.telefonoContacto,
-                Target.telefonoContactoEmergencia = Source.telefonoContactoEmergencia,
-                Target.nombreObraSocial = Source.nombreObraSocial,
-                Target.nroSocioObraSocial = Source.nroSocioObraSocial,
-                Target.telefonoObraSocialEmergencia = Source.telefonoObraSocialEmergencia
-        WHEN NOT MATCHED THEN
-            INSERT (idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni, emailPersonal,
-                    fechaNacimiento, telefonoContacto, telefonoContactoEmergencia,
-                    nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia)
-            VALUES (Source.idGrupoFamiliar, Source.idSocioResponsable, Source.nombre, Source.apellido, Source.dni, Source.emailPersonal,
-                    Source.fechaNacimiento, Source.telefonoContacto, Source.telefonoContactoEmergencia,
-                    Source.nombreObraSocial, Source.nroSocioObraSocial, Source.telefonoObraSocialEmergencia);
-        PRINT 'Datos de miembros del grupo familiar importados/actualizados con exito!';
-    END TRY
-    BEGIN CATCH
-        -- Manejo de Errores
-        DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
-        DECLARE @SeveridadError INT = ERROR_SEVERITY();
-        DECLARE @EstadoError INT = ERROR_STATE();
-        RAISERROR(@MensajeError, @SeveridadError, @EstadoError);
-    END CATCH;
-    IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
-        DROP TABLE #StagingGrupoFamiliar;
-END;
-GO
 
--- CARGAR DATOS DEL CSV
-EXEC socios.importarGrupoFamiliar
-	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\grupoFamiliar.csv';
-GO
-
-SELECT 
-  rp.name AS RoleName, 
-  mp.name AS MemberName 
-FROM sys.server_role_members m
-JOIN sys.server_principals rp ON m.role_principal_id = rp.principal_id
-JOIN sys.server_principals mp ON m.member_principal_id = mp.principal_id
-WHERE rp.name = 'bulkadmin';
-
--- VER DATOS CARGADOS
-SELECT * FROM socios.grupoFamiliar;
-GO
 
 -- ========================================================================
 -- Procedimiento: pagos.importarPagosCuotas (5° ejecutar - FUNCIONA)

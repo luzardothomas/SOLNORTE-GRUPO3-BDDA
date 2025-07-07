@@ -55,23 +55,6 @@ CREATE TABLE socios.rolDisponible (
 );
 GO
 
--- 1.3 socios.grupoFamiliar (con cambios para almacenar a los miembros individuales del csv)
-CREATE TABLE socios.grupoFamiliar (
-    idGrupoFamiliar INT PRIMARY KEY,
-    idSocioResponsable INT NOT NULL,
-    nombre VARCHAR(50) NOT NULL,
-    apellido VARCHAR(50) NOT NULL,
-    dni VARCHAR(10) NOT NULL UNIQUE, 
-    emailPersonal VARCHAR(50) NULL,
-    fechaNacimiento DATE NULL,
-    telefonoContacto VARCHAR(20) NULL,
-    telefonoContactoEmergencia VARCHAR(20) NULL,
-    nombreObraSocial VARCHAR(50) NULL,
-    nroSocioObraSocial VARCHAR(50) NULL,
-    telefonoObraSocialEmergencia VARCHAR(14) NULL
-);
-GO
-
 -- 1.4 actividades.deporteDisponible
 CREATE TABLE actividades.deporteDisponible (
 	  idDeporte INT PRIMARY KEY IDENTITY(1,1),
@@ -126,8 +109,8 @@ CREATE TABLE itinerarios.datosSUM (
 	idSitio INT PRIMARY KEY IDENTITY(1,1),
 	tarifaHorariaSocio DECIMAL(10, 2) CHECK (tarifaHorariaSocio > 0) NOT NULL,
 	tarifaHorariaInvitado DECIMAL(10, 2) CHECK (tarifaHorariaInvitado > 0) NOT NULL,
-	horaMinimaReserva DATE NOT NULL,
-	horaMaximaReserva DATE NOT NULL
+	horaMinimaReserva TIME NOT NULL,
+	horaMaximaReserva TIME NOT NULL
 );
 GO
 
@@ -189,6 +172,26 @@ CREATE TABLE socios.saldoAFavorSocio (
 	CONSTRAINT PK_saldo PRIMARY KEY (idSocio),
 	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
 );
+
+
+--2.4 socios.grupoFamiliarSocio
+CREATE TABLE socios.grupoFamiliar (
+    idGrupoFamiliar INT PRIMARY KEY,
+    idSocioResponsable INT NOT NULL,
+    nombre VARCHAR(50) NOT NULL,
+    apellido VARCHAR(50) NOT NULL,
+    dni VARCHAR(10) NOT NULL UNIQUE, 
+    emailPersonal VARCHAR(50) NULL,
+    fechaNacimiento DATE NULL,
+    telefonoContacto VARCHAR(20) NULL,
+    telefonoContactoEmergencia VARCHAR(20) NULL,
+    nombreObraSocial VARCHAR(50) NULL,
+    nroSocioObraSocial VARCHAR(50) NULL,
+    telefonoObraSocialEmergencia VARCHAR(14) NULL
+	FOREIGN KEY (idSocioResponsable) REFERENCES socios.socio(idSocio)
+);
+GO
+
 
 -- 3. Tablas con dependencias de segundo nivel
 
@@ -971,7 +974,6 @@ BEGIN
 END;
 GO
 
-
 CREATE OR ALTER PROCEDURE socios.obtenerRolesVigentesDeSocio
   @idSocio INT
 AS
@@ -989,51 +991,146 @@ GO
 --grupoFamiliar
 
 CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliar
-  @cantidadGrupoFamiliar INT
+  @idGrupoFamiliar                   INT,
+  @idSocioResponsable                INT,
+  @nombre                            VARCHAR(50),
+  @apellido                          VARCHAR(50),
+  @dni                               VARCHAR(10),
+  @emailPersonal                     VARCHAR(50)    = NULL,
+  @fechaNacimiento                   DATE           = NULL,
+  @telefonoContacto                  VARCHAR(20)    = NULL,
+  @telefonoContactoEmergencia        VARCHAR(20)    = NULL,
+  @nombreObraSocial                  VARCHAR(50)    = NULL,
+  @nroSocioObraSocial                VARCHAR(50)    = NULL,
+  @telefonoObraSocialEmergencia      VARCHAR(14)    = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- Validación
-  IF @cantidadGrupoFamiliar IS NULL OR @cantidadGrupoFamiliar <= 0
-  BEGIN
-    RAISERROR('La cantidad debe ser un entero mayor que cero.',16,1);
-    RETURN;
-  END
+  -- 1) Validar socio responsable
+  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocioResponsable)
+    THROW 51001, 'Socio responsable no encontrado.', 1;
 
-  INSERT INTO socios.grupoFamiliar (cantidadGrupoFamiliar)
-  VALUES (@cantidadGrupoFamiliar);
-END
+  -- 2) PK no duplicada
+  IF EXISTS (SELECT 1 FROM socios.grupoFamiliar WHERE idGrupoFamiliar = @idGrupoFamiliar)
+    THROW 51002, 'Ya existe un grupo con ese ID.', 1;
+
+  -- 3) DNI único dentro del grupo
+  IF EXISTS (SELECT 1 FROM socios.grupoFamiliar WHERE dni = @dni)
+    THROW 51003, 'El DNI ya está registrado en otro miembro del grupo.', 1;
+
+  -- 4) Insertar miembro
+  INSERT INTO socios.grupoFamiliar (
+    idGrupoFamiliar,
+    idSocioResponsable,
+    nombre,
+    apellido,
+    dni,
+    emailPersonal,
+    fechaNacimiento,
+    telefonoContacto,
+    telefonoContactoEmergencia,
+    nombreObraSocial,
+    nroSocioObraSocial,
+    telefonoObraSocialEmergencia
+  )
+  VALUES (
+    @idGrupoFamiliar,
+    @idSocioResponsable,
+    @nombre,
+    @apellido,
+    @dni,
+    @emailPersonal,
+    @fechaNacimiento,
+    @telefonoContacto,
+    @telefonoContactoEmergencia,
+    @nombreObraSocial,
+    @nroSocioObraSocial,
+    @telefonoObraSocialEmergencia
+  );
+
+  -- 5) Generar descuento vigente para el socio responsable
+  DECLARE @idDescuento INT;
+
+  -- Buscar o crear el tipo de descuento “DESCUENTO GRUPO FAMILIAR”
+  SELECT @idDescuento = idDescuento
+    FROM descuentos.descuentoDisponible
+   WHERE tipo = 'DESCUENTO GRUPO FAMILIAR'
+     AND estadoDescuento = 1;
+
+  -- Insertar en descuentoVigente
+  IF NOT EXISTS (
+    SELECT 1 FROM descuentos.descuentoVigente
+    WHERE idDescuento = @idDescuento
+      AND idSocio = @idSocioResponsable
+  )
+  BEGIN
+    INSERT INTO descuentos.descuentoVigente (idDescuento, idSocio)
+    VALUES (@idDescuento, @idSocioResponsable);
+  END
+END;
 GO
 
+
+-- ===============================================
+-- Actualiza los datos de un miembro de grupo familiar
+-- ===============================================
 CREATE OR ALTER PROCEDURE socios.actualizarGrupoFamiliar
-  @idGrupoFamiliar       INT,
-  @cantidadGrupoFamiliar INT
+  @idGrupoFamiliar                   INT,
+  @idSocioResponsable                INT            = NULL,
+  @nombre                            VARCHAR(50)    = NULL,
+  @apellido                          VARCHAR(50)    = NULL,
+  @dni                               VARCHAR(10)    = NULL,
+  @emailPersonal                     VARCHAR(50)    = NULL,
+  @fechaNacimiento                   DATE           = NULL,
+  @telefonoContacto                  VARCHAR(20)    = NULL,
+  @telefonoContactoEmergencia        VARCHAR(20)    = NULL,
+  @nombreObraSocial                  VARCHAR(50)    = NULL,
+  @nroSocioObraSocial                VARCHAR(50)    = NULL,
+  @telefonoObraSocialEmergencia      VARCHAR(14)    = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- Verificar existencia
+  -- 1) Verificar existencia del registro
   IF NOT EXISTS (SELECT 1 FROM socios.grupoFamiliar WHERE idGrupoFamiliar = @idGrupoFamiliar)
-  BEGIN
-    RAISERROR('Grupo familiar con ID %d no encontrado.',16,1,@idGrupoFamiliar);
-    RETURN;
-  END
+    THROW 51011, 'Miembro de grupo familiar no encontrado.', 1;
 
-  -- Validación
-  IF @cantidadGrupoFamiliar IS NULL OR @cantidadGrupoFamiliar <= 0
-  BEGIN
-    RAISERROR('La cantidad debe ser un entero mayor que cero.',16,1);
-    RETURN;
-  END
+  -- 2) Validar cambio de responsable (si se pasa)
+  IF @idSocioResponsable IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocioResponsable)
+    THROW 51012, 'Nuevo socio responsable no existe.', 1;
 
+  -- 3) Validar cambio de DNI (si se pasa)
+  IF @dni IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM socios.grupoFamiliar 
+      WHERE dni = @dni AND idGrupoFamiliar <> @idGrupoFamiliar
+    )
+    THROW 51013, 'El DNI ingresado ya existe en otro miembro.', 1;
+
+  -- 4) Aplicar UPDATE
   UPDATE socios.grupoFamiliar
-  SET cantidadGrupoFamiliar = @cantidadGrupoFamiliar
+  SET
+    idSocioResponsable           = COALESCE(@idSocioResponsable, idSocioResponsable),
+    nombre                        = COALESCE(@nombre, nombre),
+    apellido                      = COALESCE(@apellido, apellido),
+    dni                           = COALESCE(@dni, dni),
+    emailPersonal                 = COALESCE(@emailPersonal, emailPersonal),
+    fechaNacimiento               = COALESCE(@fechaNacimiento, fechaNacimiento),
+    telefonoContacto              = COALESCE(@telefonoContacto, telefonoContacto),
+    telefonoContactoEmergencia    = COALESCE(@telefonoContactoEmergencia, telefonoContactoEmergencia),
+    nombreObraSocial              = COALESCE(@nombreObraSocial, nombreObraSocial),
+    nroSocioObraSocial            = COALESCE(@nroSocioObraSocial, nroSocioObraSocial),
+    telefonoObraSocialEmergencia  = COALESCE(@telefonoObraSocialEmergencia, telefonoObraSocialEmergencia)
   WHERE idGrupoFamiliar = @idGrupoFamiliar;
-END
+END;
 GO
 
-CREATE PROCEDURE socios.eliminarGrupoFamiliar
+-- ===============================================
+-- Elimina un miembro de grupo familiar
+-- ===============================================
+CREATE OR ALTER PROCEDURE socios.eliminarGrupoFamiliar
   @idGrupoFamiliar INT
 AS
 BEGIN
@@ -1041,19 +1138,16 @@ BEGIN
 
   -- Verificar existencia
   IF NOT EXISTS (SELECT 1 FROM socios.grupoFamiliar WHERE idGrupoFamiliar = @idGrupoFamiliar)
-  BEGIN
-    RAISERROR('Grupo familiar con ID %d no encontrado.',16,1,@idGrupoFamiliar);
-    RETURN;
-  END
+    THROW 51021, 'Miembro de grupo familiar no encontrado.', 1;
 
   DELETE FROM socios.grupoFamiliar
   WHERE idGrupoFamiliar = @idGrupoFamiliar;
-END
+END;
 GO
 
---grupoFamiliarActivo
+--grupoFamiliarActivo // probablemente saquemos esta tabla.
 
-CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliarActivo
+/*CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliarActivo
   @idSocio INT,
   @idGrupoFamiliar INT,
   @parentescoGrupoFamiliar VARCHAR(5)
@@ -1143,7 +1237,7 @@ BEGIN
     THROW 50022, 'No se encontró relación activa para modificar.', 1;
   END
 END;
-GO
+GO*/
 
 --deporteDisponible
 
@@ -1305,117 +1399,159 @@ GO
 
 
 --actividadPileta
-
 CREATE OR ALTER PROCEDURE actividades.insertarActividadPileta
-  @tarifaSocioPorDia           DECIMAL(10, 2),
-  @tarifaSocioPorMes           DECIMAL(10, 2),
-  @tarifaSocioPorTemporada     DECIMAL(10, 2),
-  @tarifaInvitadoPorDia        DECIMAL(10, 2),
-  @tarifaInvitadoPorMes        DECIMAL(10, 2),
-  @tarifaInvitadoPorTemporada  DECIMAL(10, 2),
-  @horaAperturaActividad       DATE,
-  @horaCierreActividad         DATE
+  @tarifaSocioPorDiaAdulto        DECIMAL(10,2),
+  @tarifaSocioPorTemporadaAdulto  DECIMAL(10,2),
+  @tarifaSocioPorMesAdulto        DECIMAL(10,2),
+  @tarifaSocioPorDiaMenor         DECIMAL(10,2),
+  @tarifaSocioPorTemporadaMenor   DECIMAL(10,2),
+  @tarifaSocioPorMesMenor         DECIMAL(10,2),
+  @tarifaInvitadoPorDiaAdulto     DECIMAL(10,2),
+  @tarifaInvitadoPorTemporadaAdulto DECIMAL(10,2),
+  @tarifaInvitadoPorMesAdulto     DECIMAL(10,2),
+  @tarifaInvitadoPorDiaMenor      DECIMAL(10,2),
+  @tarifaInvitadoPorTemporadaMenor DECIMAL(10,2),
+  @tarifaInvitadoPorMesMenor      DECIMAL(10,2),
+  @horaAperturaActividad         TIME,
+  @horaCierreActividad           TIME,
+  @vigenciaHasta                 DATE
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- 1) Validar tarifas
-  IF @tarifaSocioPorDia <= 0 OR
-     @tarifaSocioPorMes <= 0 OR
-     @tarifaSocioPorTemporada <= 0 OR
-     @tarifaInvitadoPorDia <= 0 OR
-     @tarifaInvitadoPorMes <= 0 OR
-     @tarifaInvitadoPorTemporada <= 0
+  -- Validaciones de tarifas positivas
+  IF @tarifaSocioPorDiaAdulto <= 0 OR
+     @tarifaSocioPorTemporadaAdulto <= 0 OR
+     @tarifaSocioPorMesAdulto <= 0 OR
+     @tarifaSocioPorDiaMenor <= 0 OR
+     @tarifaSocioPorTemporadaMenor <= 0 OR
+     @tarifaSocioPorMesMenor <= 0 OR
+     @tarifaInvitadoPorDiaAdulto <= 0 OR
+     @tarifaInvitadoPorTemporadaAdulto <= 0 OR
+     @tarifaInvitadoPorMesAdulto <= 0 OR
+     @tarifaInvitadoPorDiaMenor <= 0 OR
+     @tarifaInvitadoPorTemporadaMenor <= 0 OR
+     @tarifaInvitadoPorMesMenor <= 0
   BEGIN
-    THROW 50010, 'Todas las tarifas deben ser mayores a cero.', 1;
+    THROW 60001, 'Todas las tarifas deben ser mayores a cero.', 1;
   END
 
-  -- 2) Validar horario
+  -- Validar horario lógico
   IF @horaCierreActividad <= @horaAperturaActividad
   BEGIN
-    THROW 50011, 'La hora de cierre debe ser posterior a la de apertura.', 1;
+    THROW 60002, 'La hora de cierre debe ser posterior a la de apertura.', 1;
   END
 
-  -- 3) Insertar registro
+  -- Insertar
   INSERT INTO actividades.actividadPileta (
-    tarifaSocioPorDia,
-    tarifaSocioPorMes,
-    tarifaSocioPorTemporada,
-    tarifaInvitadoPorDia,
-    tarifaInvitadoPorMes,
-    tarifaInvitadoPorTemporada,
+    tarifaSocioPorDiaAdulto,
+    tarifaSocioPorTemporadaAdulto,
+    tarifaSocioPorMesAdulto,
+    tarifaSocioPorDiaMenor,
+    tarifaSocioPorTemporadaMenor,
+    tarifaSocioPorMesMenor,
+    tarifaInvitadoPorDiaAdulto,
+    tarifaInvitadoPorTemporadaAdulto,
+    tarifaInvitadoPorMesAdulto,
+    tarifaInvitadoPorDiaMenor,
+    tarifaInvitadoPorTemporadaMenor,
+    tarifaInvitadoPorMesMenor,
     horaAperturaActividad,
-    horaCierreActividad
-  )
-  VALUES (
-    @tarifaSocioPorDia,
-    @tarifaSocioPorMes,
-    @tarifaSocioPorTemporada,
-    @tarifaInvitadoPorDia,
-    @tarifaInvitadoPorMes,
-    @tarifaInvitadoPorTemporada,
+    horaCierreActividad,
+    vigenciaHasta
+  ) VALUES (
+    @tarifaSocioPorDiaAdulto,
+    @tarifaSocioPorTemporadaAdulto,
+    @tarifaSocioPorMesAdulto,
+    @tarifaSocioPorDiaMenor,
+    @tarifaSocioPorTemporadaMenor,
+    @tarifaSocioPorMesMenor,
+    @tarifaInvitadoPorDiaAdulto,
+    @tarifaInvitadoPorTemporadaAdulto,
+    @tarifaInvitadoPorMesAdulto,
+    @tarifaInvitadoPorDiaMenor,
+    @tarifaInvitadoPorTemporadaMenor,
+    @tarifaInvitadoPorMesMenor,
     @horaAperturaActividad,
-    @horaCierreActividad
+    @horaCierreActividad,
+    @vigenciaHasta
   );
 END;
 GO
 
-
-
+-- ===============================================
+-- Procedure: Actualizar tarifa de actividad pileta
+-- ===============================================
 CREATE OR ALTER PROCEDURE actividades.actualizarActividadPileta
-  @idActividad                 INT,
-  @tarifaSocioPorDia           DECIMAL(10, 2),
-  @tarifaSocioPorMes           DECIMAL(10, 2),
-  @tarifaSocioPorTemporada     DECIMAL(10, 2),
-  @tarifaInvitadoPorDia        DECIMAL(10, 2),
-  @tarifaInvitadoPorMes        DECIMAL(10, 2),
-  @tarifaInvitadoPorTemporada  DECIMAL(10, 2),
-  @horaAperturaActividad       DATE,
-  @horaCierreActividad         DATE
+  @idActividad                    INT,
+  @tarifaSocioPorDiaAdulto        DECIMAL(10,2)    = NULL,
+  @tarifaSocioPorTemporadaAdulto  DECIMAL(10,2)    = NULL,
+  @tarifaSocioPorMesAdulto        DECIMAL(10,2)    = NULL,
+  @tarifaSocioPorDiaMenor         DECIMAL(10,2)    = NULL,
+  @tarifaSocioPorTemporadaMenor   DECIMAL(10,2)    = NULL,
+  @tarifaSocioPorMesMenor         DECIMAL(10,2)    = NULL,
+  @tarifaInvitadoPorDiaAdulto     DECIMAL(10,2)    = NULL,
+  @tarifaInvitadoPorTemporadaAdulto DECIMAL(10,2)  = NULL,
+  @tarifaInvitadoPorMesAdulto     DECIMAL(10,2)    = NULL,
+  @tarifaInvitadoPorDiaMenor      DECIMAL(10,2)    = NULL,
+  @tarifaInvitadoPorTemporadaMenor DECIMAL(10,2)   = NULL,
+  @tarifaInvitadoPorMesMenor      DECIMAL(10,2)    = NULL,
+  @horaAperturaActividad         TIME             = NULL,
+  @horaCierreActividad           TIME             = NULL,
+  @vigenciaHasta                 DATE             = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- 1) Verificar existencia
-  IF NOT EXISTS (
-    SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad
-  )
+  -- Verificar existencia
+  IF NOT EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad)
+    THROW 60011, 'Actividad de pileta no encontrada.', 1;
+
+  -- Validaciones de tarifas positivas si cambian
+  IF @tarifaSocioPorDiaAdulto IS NOT NULL AND @tarifaSocioPorDiaAdulto <= 0 OR
+     @tarifaSocioPorTemporadaAdulto IS NOT NULL AND @tarifaSocioPorTemporadaAdulto <= 0 OR
+     @tarifaSocioPorMesAdulto IS NOT NULL AND @tarifaSocioPorMesAdulto <= 0 OR
+     @tarifaSocioPorDiaMenor IS NOT NULL AND @tarifaSocioPorDiaMenor <= 0 OR
+     @tarifaSocioPorTemporadaMenor IS NOT NULL AND @tarifaSocioPorTemporadaMenor <= 0 OR
+     @tarifaSocioPorMesMenor IS NOT NULL AND @tarifaSocioPorMesMenor <= 0 OR
+     @tarifaInvitadoPorDiaAdulto IS NOT NULL AND @tarifaInvitadoPorDiaAdulto <= 0 OR
+     @tarifaInvitadoPorTemporadaAdulto IS NOT NULL AND @tarifaInvitadoPorTemporadaAdulto <= 0 OR
+     @tarifaInvitadoPorMesAdulto IS NOT NULL AND @tarifaInvitadoPorMesAdulto <= 0 OR
+     @tarifaInvitadoPorDiaMenor IS NOT NULL AND @tarifaInvitadoPorDiaMenor <= 0 OR
+     @tarifaInvitadoPorTemporadaMenor IS NOT NULL AND @tarifaInvitadoPorTemporadaMenor <= 0 OR
+     @tarifaInvitadoPorMesMenor IS NOT NULL AND @tarifaInvitadoPorMesMenor <= 0
   BEGIN
-    THROW 50020, 'Actividad de pileta no encontrada.', 1;
+    THROW 60012, 'Todas las tarifas deben ser mayores a cero.', 1;
   END
 
-  -- 2) Validar tarifas
-  IF @tarifaSocioPorDia <= 0 OR
-     @tarifaSocioPorMes <= 0 OR
-     @tarifaSocioPorTemporada <= 0 OR
-     @tarifaInvitadoPorDia <= 0 OR
-     @tarifaInvitadoPorMes <= 0 OR
-     @tarifaInvitadoPorTemporada <= 0
+  -- Validar horario lógico si cambian
+  IF @horaAperturaActividad IS NOT NULL AND @horaCierreActividad IS NOT NULL
+     AND @horaCierreActividad <= @horaAperturaActividad
   BEGIN
-    THROW 50021, 'Todas las tarifas deben ser mayores a cero.', 1;
+    THROW 60013, 'La hora de cierre debe ser posterior a apertura.', 1;
   END
 
-  -- 3) Validar horario
-  IF @horaCierreActividad <= @horaAperturaActividad
-  BEGIN
-    THROW 50022, 'La hora de cierre debe ser posterior a la de apertura.', 1;
-  END
-
-  -- 4) Actualizar registro
+  -- Aplicar UPDATE
   UPDATE actividades.actividadPileta
   SET
-    tarifaSocioPorDia           = @tarifaSocioPorDia,
-    tarifaSocioPorMes           = @tarifaSocioPorMes,
-    tarifaSocioPorTemporada     = @tarifaSocioPorTemporada,
-    tarifaInvitadoPorDia        = @tarifaInvitadoPorDia,
-    tarifaInvitadoPorMes        = @tarifaInvitadoPorMes,
-    tarifaInvitadoPorTemporada  = @tarifaInvitadoPorTemporada,
-    horaAperturaActividad       = @horaAperturaActividad,
-    horaCierreActividad         = @horaCierreActividad
+    tarifaSocioPorDiaAdulto        = COALESCE(@tarifaSocioPorDiaAdulto, tarifaSocioPorDiaAdulto),
+    tarifaSocioPorTemporadaAdulto  = COALESCE(@tarifaSocioPorTemporadaAdulto, tarifaSocioPorTemporadaAdulto),
+    tarifaSocioPorMesAdulto        = COALESCE(@tarifaSocioPorMesAdulto, tarifaSocioPorMesAdulto),
+    tarifaSocioPorDiaMenor         = COALESCE(@tarifaSocioPorDiaMenor, tarifaSocioPorDiaMenor),
+    tarifaSocioPorTemporadaMenor   = COALESCE(@tarifaSocioPorTemporadaMenor, tarifaSocioPorTemporadaMenor),
+    tarifaSocioPorMesMenor         = COALESCE(@tarifaSocioPorMesMenor, tarifaSocioPorMesMenor),
+    tarifaInvitadoPorDiaAdulto     = COALESCE(@tarifaInvitadoPorDiaAdulto, tarifaInvitadoPorDiaAdulto),
+    tarifaInvitadoPorTemporadaAdulto = COALESCE(@tarifaInvitadoPorTemporadaAdulto, tarifaInvitadoPorTemporadaAdulto),
+    tarifaInvitadoPorMesAdulto     = COALESCE(@tarifaInvitadoPorMesAdulto, tarifaInvitadoPorMesAdulto),
+    tarifaInvitadoPorDiaMenor      = COALESCE(@tarifaInvitadoPorDiaMenor, tarifaInvitadoPorDiaMenor),
+    tarifaInvitadoPorTemporadaMenor= COALESCE(@tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorTemporadaMenor),
+    tarifaInvitadoPorMesMenor      = COALESCE(@tarifaInvitadoPorMesMenor, tarifaInvitadoPorMesMenor),
+    horaAperturaActividad         = COALESCE(@horaAperturaActividad, horaAperturaActividad),
+    horaCierreActividad           = COALESCE(@horaCierreActividad, horaCierreActividad),
+    vigenciaHasta                 = COALESCE(@vigenciaHasta, vigenciaHasta)
   WHERE idActividad = @idActividad;
 END;
 GO
-
 
 CREATE OR ALTER PROCEDURE actividades.eliminarActividadPileta
   @idActividad INT
@@ -1423,20 +1559,14 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
-  -- 1) Verificar existencia
-  IF NOT EXISTS (
-    SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad
-  )
-  BEGIN
-    THROW 50030, 'Actividad de pileta no encontrada.', 1;
-  END
+  -- Verificar existencia
+  IF NOT EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad)
+    THROW 60021, 'Actividad de pileta no encontrada.', 1;
 
-  -- 2) Eliminar registro
   DELETE FROM actividades.actividadPileta
   WHERE idActividad = @idActividad;
 END;
 GO
-
 
 -- :::::::::::::::::::::::::::::::::::::::::::: ACTIVIDADES ::::::::::::::::::::::::::::::::::::::::::::
 
@@ -1610,7 +1740,7 @@ BEGIN
 END
 GO
 
-CREATE PROCEDURE pagos.eliminarTarjetaDisponible
+CREATE OR ALTER PROCEDURE pagos.eliminarTarjetaDisponible
   @idTarjeta   INT,
   @tipoTarjeta VARCHAR(7)
 AS
@@ -1777,8 +1907,7 @@ CREATE OR ALTER PROCEDURE pagos.emitirFactura
   @idFactura         INT,
   @cuilDeudor        VARCHAR(13),
   @domicilio         VARCHAR(35),
-  @modalidadCobro    VARCHAR(25),  -- e.g. 'Contado' o 'Cuotas:6'
-  @importeBruto      DECIMAL(10,2)
+  @modalidadCobro    VARCHAR(25)  -- e.g. 'Contado' o 'Cuotas:6'
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -1787,119 +1916,54 @@ BEGIN
     -- 1) Validar existencia y estado de la factura activa
     DECLARE @estadoActiva VARCHAR(15);
     SELECT @estadoActiva = estadoFactura
-    FROM pagos.facturaActiva
-    WHERE idFactura = @idFactura;
+      FROM pagos.facturaActiva
+     WHERE idFactura = @idFactura;
 
     IF @estadoActiva IS NULL
       THROW 60010, 'Factura activa no encontrada.', 1;
     IF @estadoActiva <> 'Pendiente'
-      THROW 60011, 'Sólo se puede emitir una factura pendiente.', 1;
+      THROW 60011, 'Solo se puede emitir una factura pendiente.', 1;
 
     -- 2) Validar CUIL
     IF socios.validarCUIL(@cuilDeudor) = 0
       THROW 60012, 'CUIL inválido.', 1;
 
-    -- 3) Calcular importeTotal (aquí igualamos a bruto; lógica de descuento puede ir aparte)
-    DECLARE @importeTotal DECIMAL(10,2) = @importeBruto;
-
-    -- 4) Obtener nombre y apellido del socio
-    DECLARE @nombreSocio VARCHAR(10), @apellidoSocio VARCHAR(10);
+    -- 3) Obtener nombre y apellido del socio
+    DECLARE @nombreSocio VARCHAR(50), @apellidoSocio VARCHAR(50);
     SELECT @nombreSocio = nombre, @apellidoSocio = apellido
-    FROM socios.socio
-    WHERE idSocio = (SELECT idSocio FROM pagos.facturaActiva WHERE idFactura = @idFactura);
+      FROM socios.socio
+     WHERE idSocio = (
+       SELECT idSocio FROM pagos.facturaActiva WHERE idFactura = @idFactura
+     );
 
-    -- 5) Insertar en facturaEmitida
+    -- 4) Insertar en facturaEmitida con importes en cero
     INSERT INTO pagos.facturaEmitida (
-      idFactura, nombreSocio, apellidoSocio,
-      fechaEmision, cuilDeudor, domicilio,
-      modalidadCobro, importeBruto, importeTotal
+      idFactura,
+      nombreSocio,
+      apellidoSocio,
+      fechaEmision,
+      cuilDeudor,
+      domicilio,
+      modalidadCobro,
+      importeBruto,
+      importeTotal
     )
     VALUES (
-      @idFactura, @nombreSocio, @apellidoSocio,
-      GETDATE(), @cuilDeudor, @domicilio,
-      @modalidadCobro, @importeBruto, @importeTotal
+      @idFactura,
+      @nombreSocio,
+      @apellidoSocio,
+      GETDATE(),
+      @cuilDeudor,
+      @domicilio,
+      @modalidadCobro,
+      0.00,    -- se inicializa en cero
+      0.00     -- se inicializa en cero
     );
 
-    -- 6) Marcar activa como pagada
+    -- 5) Marcar activa como emitida (Pagada)
     UPDATE pagos.facturaActiva
     SET estadoFactura = 'Pagada'
     WHERE idFactura = @idFactura;
-
-    COMMIT TRANSACTION;
-  END TRY
-  BEGIN CATCH
-    IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
-    THROW;
-  END CATCH
-END;
-GO
-
-CREATE OR ALTER PROCEDURE pagos.insertarCuerpoFactura
-  @idFactura INT,
-  @tipoItem VARCHAR(20),
-  @descripcionItem VARCHAR(25),
-  @importeItem DECIMAL(10,2)
-AS
-BEGIN
-  SET NOCOUNT ON;
-  BEGIN TRANSACTION;
-  BEGIN TRY
-    -- Validar existencia de factura emitida
-    IF NOT EXISTS (SELECT 1 FROM pagos.facturaEmitida WHERE idFactura = @idFactura)
-      THROW 61001, 'Factura no encontrada.', 1;
-
-    -- Generar nuevo idItemFactura
-    DECLARE @newItem INT;
-    SELECT @newItem = COALESCE(MAX(idItemFactura), 0) + 1
-      FROM pagos.cuerpoFactura
-     WHERE idFactura = @idFactura;
-
-    -- Insertar ítem
-    INSERT INTO pagos.cuerpoFactura (
-      idFactura, idItemFactura, tipoItem, descripcionItem, importeItem
-    ) VALUES (
-      @idFactura, @newItem, @tipoItem, @descripcionItem, @importeItem
-    );
-
-    -- Obtener estado de saldoAFavor
-    DECLARE @idSocio INT, @saldo DECIMAL(10,2);
-    SELECT @idSocio = fa.idSocio
-      FROM pagos.facturaActiva fa
-     WHERE fa.idFactura = @idFactura;
-
-    SELECT @saldo = saldoTotal FROM socios.saldoAFavorSocio WHERE idSocio = @idSocio;
-
-    IF @saldo >= @importeItem
-    BEGIN
-      -- Descontar del saldoAFavorSocio sin afectar importeBruto ni importeTotal
-      UPDATE socios.saldoAFavorSocio
-      SET saldoTotal = saldoTotal - @importeItem
-      WHERE idSocio = @idSocio;
-    END
-    ELSE
-    BEGIN
-      -- Actualizar importeBruto de facturaEmitida
-      UPDATE pagos.facturaEmitida
-      SET importeBruto = importeBruto + @importeItem
-      WHERE idFactura = @idFactura;
-
-      -- Recalcular importeTotal con descuentos vigentes
-      DECLARE @sumDesc DECIMAL(5,2), @bruto DECIMAL(10,2), @nuevoTotal DECIMAL(10,2);
-      SELECT @bruto = fe.importeBruto
-        FROM pagos.facturaEmitida fe
-       WHERE fe.idFactura = @idFactura;
-
-      SELECT @sumDesc = COALESCE(SUM(dd.porcentajeDescontado),0)
-        FROM descuentos.descuentoDisponible dd
-        JOIN descuentos.descuentoVigente dv ON dd.idDescuento = dv.idDescuento
-       WHERE dv.idSocio = @idSocio;
-
-      SET @nuevoTotal = ROUND(@bruto * (1 - @sumDesc/100.0), 2);
-
-      UPDATE pagos.facturaEmitida
-      SET importeTotal = @nuevoTotal
-      WHERE idFactura = @idFactura;
-    END
 
     COMMIT TRANSACTION;
   END TRY
@@ -1910,212 +1974,91 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE pagos.actualizarCuerpoFactura
-  @idFactura INT,
-  @idItemFactura INT,
-  @nuevoTipoItem VARCHAR(20) = NULL,
-  @nuevaDescripcion VARCHAR(25) = NULL,
-  @nuevoImporteItem DECIMAL(10,2) = NULL
+CREATE OR ALTER PROCEDURE pagos.insertarCuerpoFactura
+  @idFactura        INT,
+  @tipoItem         VARCHAR(20),
+  @descripcionItem  VARCHAR(25),
+  @importeItem      DECIMAL(10,2)
 AS
 BEGIN
   SET NOCOUNT ON;
   BEGIN TRANSACTION;
   BEGIN TRY
-    -- Validar ítem existente
-    DECLARE @oldImporte DECIMAL(10,2);
-    SELECT @oldImporte = importeItem
-      FROM pagos.cuerpoFactura
-     WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
-    IF @oldImporte IS NULL
-      THROW 61011, 'Ítem no encontrado.', 1;
-
-    -- Calcular delta
-    DECLARE @delta DECIMAL(10,2) = COALESCE(@nuevoImporteItem, @oldImporte) - @oldImporte;
-
-    -- Actualizar ítem
-    UPDATE pagos.cuerpoFactura
-    SET
-      tipoItem = COALESCE(@nuevoTipoItem, tipoItem),
-      descripcionItem = COALESCE(@nuevaDescripcion, descripcionItem),
-      importeItem = COALESCE(@nuevoImporteItem, importeItem)
-    WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
-
-    -- Actualizar importeBruto
-    UPDATE pagos.facturaEmitida
-    SET importeBruto = importeBruto + @delta
-    WHERE idFactura = @idFactura;
-
-    -- Recalcular importeTotal con descuentos
-    DECLARE @idSocio INT, @sumDesc DECIMAL(5,2), @bruto DECIMAL(10,2), @nuevoTotal DECIMAL(10,2);
-    SELECT @idSocio = fa.idSocio, @bruto = fe.importeBruto
-      FROM pagos.facturaActiva fa
-      JOIN pagos.facturaEmitida fe ON fa.idFactura = fe.idFactura
-     WHERE fe.idFactura = @idFactura;
-
-    SELECT @sumDesc = COALESCE(SUM(dd.porcentajeDescontado),0)
-      FROM descuentos.descuentoDisponible dd
-      JOIN descuentos.descuentoVigente dv ON dd.idDescuento = dv.idDescuento
-     WHERE dv.idSocio = @idSocio;
-
-    SET @nuevoTotal = ROUND(@bruto * (1 - @sumDesc/100.0), 2);
-    UPDATE pagos.facturaEmitida SET importeTotal = @nuevoTotal WHERE idFactura = @idFactura;
-
-    -- Ajustar saldoAFavorSocio según delta
-    DECLARE @saldo DECIMAL(10,2);
-    SELECT @saldo = saldoTotal FROM socios.saldoAFavorSocio WHERE idSocio = @idSocio;
-    IF @delta > 0 AND @saldo < @delta
-      THROW 61012, 'Saldo insuficiente para ajuste.', 1;
-
-    UPDATE socios.saldoAFavorSocio
-    SET saldoTotal = saldoTotal - @delta
-    WHERE idSocio = @idSocio;
-
-    COMMIT TRANSACTION;
-  END TRY
-  BEGIN CATCH
-    IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
-    THROW;
-  END CATCH
-END;
-GO
-
-CREATE OR ALTER PROCEDURE pagos.eliminarCuerpoFactura
-  @idFactura INT,
-  @idItemFactura INT
-AS
-BEGIN
-  SET NOCOUNT ON;
-  BEGIN TRANSACTION;
-  BEGIN TRY
-    -- Obtener importe antes de borrar
-    DECLARE @importeOld DECIMAL(10,2);
-    SELECT @importeOld = importeItem
-      FROM pagos.cuerpoFactura
-     WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
-    IF @importeOld IS NULL
-      THROW 61021, 'Ítem no encontrado.', 1;
-
-    -- Borrar ítem
-    DELETE FROM pagos.cuerpoFactura
-    WHERE idFactura = @idFactura AND idItemFactura = @idItemFactura;
-
-    -- Actualizar importeBruto
-    UPDATE pagos.facturaEmitida
-    SET importeBruto = importeBruto - @importeOld
-    WHERE idFactura = @idFactura;
-
-    -- Recalcular importeTotal con descuentos
-    DECLARE @idSocio INT, @sumDesc DECIMAL(5,2), @bruto DECIMAL(10,2), @nuevoTotal DECIMAL(10,2);
-    SELECT @idSocio = fa.idSocio, @bruto = fe.importeBruto
-      FROM pagos.facturaActiva fa
-      JOIN pagos.facturaEmitida fe ON fa.idFactura = fe.idFactura
-     WHERE fe.idFactura = @idFactura;
-
-    SELECT @sumDesc = COALESCE(SUM(dd.porcentajeDescontado),0)
-      FROM descuentos.descuentoDisponible dd
-      JOIN descuentos.descuentoVigente dv ON dd.idDescuento = dv.idDescuento
-     WHERE dv.idSocio = @idSocio;
-
-    SET @nuevoTotal = ROUND(@bruto * (1 - @sumDesc/100.0), 2);
-    UPDATE pagos.facturaEmitida SET importeTotal = @nuevoTotal WHERE idFactura = @idFactura;
-
-    -- Devolver importe al saldoAFavorSocio
-    UPDATE socios.saldoAFavorSocio
-    SET saldoTotal = saldoTotal + @importeOld
-    WHERE idSocio = @idSocio;
-
-    COMMIT TRANSACTION;
-  END TRY
-  BEGIN CATCH
-    IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
-    THROW;
-  END CATCH
-END;
-GO
-
-CREATE OR ALTER PROCEDURE pagos.insertarCobroFactura
-  @idFacturaCobrada INT,
-  @idSocio          INT,
-  @categoriaSocio   INT,
-  @newIdCobro       INT OUTPUT
-AS
-BEGIN
-  SET NOCOUNT ON;
-  BEGIN TRANSACTION;
-  BEGIN TRY
-    DECLARE 
-      @modalidad    VARCHAR(25),
-      @importeTotal DECIMAL(10,2),
-      @numCuotas    INT,
-      @nextCuota    INT,
-      @nombre       VARCHAR(10),
-      @apellido     VARCHAR(10),
-      @cuilDeudor   INT,
-      @domicilio    VARCHAR(20),
-      @totalAbonado DECIMAL(10,2);
-
-    -- Traer datos de facturaEmitida
-		SELECT
-			@modalidad    = fe.modalidadCobro,
-			@importeTotal = fe.importeTotal,
-			@cuilDeudor   = fe.cuilDeudor,
-			@domicilio    = fe.domicilio
-			FROM pagos.facturaEmitida fe
-			WHERE fe.idFactura = @idFacturaCobrada;
-			IF @@ROWCOUNT = 0 THROW 63001, 'FacturaEmitida no encontrada.', 1;
-
-    -- Calcular cuotas
-    SET @numCuotas = TRY_CAST(SUBSTRING(@modalidad,CHARINDEX(':',@modalidad)+1,10) AS INT);
-    IF @numCuotas IS NULL OR @numCuotas<=0 SET @numCuotas = 1;
-
-    -- Siguiente cuota
-    SELECT @nextCuota = COALESCE(MAX(numeroCuota),0)+1
-      FROM pagos.cobroFactura
-     WHERE idFacturaCobrada = @idFacturaCobrada;
-    IF @nextCuota > @numCuotas THROW 63002, 'Todas las cuotas ya fueron cobradas.', 1;
-
-    -- Datos del socio
-		SELECT
-		@nombre   = s.nombre,
-		@apellido = s.apellido
-		FROM socios.socio s
-		WHERE s.idSocio = @idSocio
-		AND s.categoriaSocio = @categoriaSocio;
-		IF @@ROWCOUNT = 0 THROW 63003, 'Socio o categoría no válidos.', 1;
-
-    -- Calcular totalAbonado de esta cuota
-    SET @totalAbonado = ROUND(@importeTotal*1.0/@numCuotas,2);
-
-    -- Insertar
-    INSERT INTO pagos.cobroFactura (
-      idFacturaCobrada, idSocio, categoriaSocio,
-      fechaEmisionCobro, nombreSocio, apellidoSocio,
-      cuilDeudor, domicilio, modalidadCobro,
-      numeroCuota, totalAbonado
-    ) VALUES (
-      @idFacturaCobrada,@idSocio,@categoriaSocio,
-      GETDATE(),@nombre,@apellido,
-      @cuilDeudor,@domicilio,@modalidad,
-      @nextCuota,@totalAbonado
-    );
-    SET @newIdCobro = SCOPE_IDENTITY();
-
-    -- Si totalAbonado acumulado iguala importeTotal, actualizar facturaActiva
-    DECLARE @sumCobros DECIMAL(10,2);
-    SELECT @sumCobros = SUM(totalAbonado)
-      FROM pagos.cobroFactura
-     WHERE idFacturaCobrada = @idFacturaCobrada;
-    IF @sumCobros = @importeTotal
+    -- 0) Aplicar descuentos según tipo de ítem
+    IF UPPER(@tipoItem) = 'MEMBRESIA'
     BEGIN
-      UPDATE pagos.facturaActiva
-      SET estadoFactura = 'Pagada'
-      WHERE idFactura = @idFacturaCobrada;
+      -- 15% de descuento en membresía
+      SET @importeItem = ROUND(@importeItem * 0.85, 2);
+    END
+
+    -- 1) Validar existencia de factura emitida
+    IF NOT EXISTS (SELECT 1 FROM pagos.facturaEmitida WHERE idFactura = @idFactura)
+      THROW 61001, 'Factura no encontrada.', 1;
+
+    -- 2) Generar nuevo idItemFactura
+    DECLARE @newItem INT;
+    SELECT @newItem = COALESCE(MAX(idItemFactura), 0) + 1
+      FROM pagos.cuerpoFactura
+     WHERE idFactura = @idFactura;
+
+    -- 3) Insertar ítem
+    INSERT INTO pagos.cuerpoFactura (
+      idFactura, idItemFactura, tipoItem, descripcionItem, importeItem
+    ) VALUES (
+      @idFactura, @newItem, @tipoItem, @descripcionItem, @importeItem
+    );
+
+    -- 4) Si es deporte, verificar número de deportes para descuento adicional
+    IF UPPER(@tipoItem) = 'DEPORTE'
+    BEGIN
+      DECLARE @countDeporte INT;
+      SELECT @countDeporte = COUNT(*)
+        FROM pagos.cuerpoFactura
+       WHERE idFactura = @idFactura
+         AND UPPER(tipoItem) = 'DEPORTE';
+      IF @countDeporte > 1
+      BEGIN
+        -- Aplicar 10% de descuento a todos los deportes
+        UPDATE pagos.cuerpoFactura
+        SET importeItem = ROUND(importeItem * 0.90, 2)
+        WHERE idFactura = @idFactura
+          AND UPPER(tipoItem) = 'DEPORTE';
+      END
+    END
+
+    -- 5) Ajuste de saldo o importes generales
+    DECLARE @idSocio INT, @saldo DECIMAL(10,2);
+    SELECT @idSocio = fa.idSocio
+      FROM pagos.facturaActiva fa
+     WHERE fa.idFactura = @idFactura;
+
+    SELECT @saldo = saldoTotal
+      FROM socios.saldoAFavorSocio
+     WHERE idSocio = @idSocio;
+
+    IF @saldo >= @importeItem
+    BEGIN
+      -- Descontar del saldo a favor
+      UPDATE socios.saldoAFavorSocio
+      SET saldoTotal = saldoTotal - @importeItem
+      WHERE idSocio = @idSocio;
+    END
+    ELSE
+    BEGIN
+      -- Acumular al importe bruto
+      UPDATE pagos.facturaEmitida
+      SET importeBruto = importeBruto + @importeItem
+      WHERE idFactura = @idFactura;
+
+      UPDATE pagos.facturaEmitida
+      SET importeTotal = importeBruto
+      WHERE idFactura = @idFactura;
     END
 
     COMMIT TRANSACTION;
   END TRY
   BEGIN CATCH
-    IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
     THROW;
   END CATCH
 END;
@@ -2191,6 +2134,12 @@ BEGIN
       @medioDePagoUsado,
       @razonReembolso
     );
+
+	 -- Devolver importe al saldoAFavorSocio
+    UPDATE socios.saldoAFavorSocio
+    SET saldoTotal = saldoTotal + @monto
+    WHERE idSocio = @idSocio;
+
 
     -- Eliminar cobro
     DELETE FROM pagos.cobroFactura
@@ -2785,56 +2734,57 @@ GO
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: insertarDatosSUM
 -- ------------------------------------------------------------------------------
-CREATE PROCEDURE itinerarios.insertarDatosSUM
-    @tarifaHorariaSocio DECIMAL(10, 2),
-    @tarifaHorariaInvitado DECIMAL(10, 2),
-    @horaMinimaReserva INT,
-    @horaMaximaReserva INT
+CREATE OR ALTER PROCEDURE itinerarios.insertarDatosSUM
+    @tarifaHorariaSocio     DECIMAL(10, 2),
+    @tarifaHorariaInvitado  DECIMAL(10, 2),
+    @horaMinimaReserva      TIME,
+    @horaMaximaReserva      TIME
 AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
+        -- Validar tarifas
         IF @tarifaHorariaSocio <= 0
-        BEGIN
-            RAISERROR('La tarifa horaria para socios debe ser mayor que cero.', 16, 1);
-            RETURN;
-        END
+            THROW 52001, 'La tarifa horaria para socios debe ser mayor que cero.', 1;
 
         IF @tarifaHorariaInvitado <= 0
-        BEGIN
-            RAISERROR('La tarifa horaria para invitados debe ser mayor que cero.', 16, 1);
-            RETURN;
-        END
+            THROW 52002, 'La tarifa horaria para invitados debe ser mayor que cero.', 1;
 
-        IF @horaMinimaReserva < 0 OR @horaMinimaReserva > 23
-        BEGIN
-            RAISERROR('La hora mínima de reserva debe estar entre 0 y 23.', 16, 1);
-            RETURN;
-        END
-
-        IF @horaMaximaReserva < 0 OR @horaMaximaReserva > 23
-        BEGIN
-            RAISERROR('La hora máxima de reserva debe estar entre 0 y 23.', 16, 1);
-            RETURN;
-        END
+        -- Validar rangos de tiempo
+        IF @horaMinimaReserva IS NULL
+            THROW 52003, 'La hora mínima de reserva no puede ser nula.', 1;
+        IF @horaMaximaReserva IS NULL
+            THROW 52004, 'La hora máxima de reserva no puede ser nula.', 1;
 
         IF @horaMinimaReserva >= @horaMaximaReserva
-        BEGIN
-            RAISERROR('La hora mínima de reserva debe ser menor que la hora máxima de reserva.', 16, 1);
-            RETURN;
-        END
+            THROW 52005, 'La hora mínima debe ser anterior a la hora máxima.', 1;
 
-        -- Inserción del nuevo registro de datos SUM.
-        INSERT INTO itinerarios.datosSUM (tarifaHorariaSocio, tarifaHorariaInvitado, horaMinimaReserva, horaMaximaReserva)
-        VALUES (@tarifaHorariaSocio, @tarifaHorariaInvitado, @horaMinimaReserva, @horaMaximaReserva);
+        -- Inserción del nuevo registro de datos SUM
+        INSERT INTO itinerarios.datosSUM (
+            tarifaHorariaSocio,
+            tarifaHorariaInvitado,
+			horaMinReserva,
+            horaMaxReserva
+        ) VALUES (
+            @tarifaHorariaSocio,
+            @tarifaHorariaInvitado,
+            @horaMinimaReserva,
+            @horaMaximaReserva
+        );
+
         PRINT 'Datos SUM insertados exitosamente.';
     END TRY
     BEGIN CATCH
-        PRINT 'Error al insertar datos SUM: ' + ERROR_MESSAGE();
-        THROW;
+        -- Manejo de errores
+        DECLARE @msg NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @sev INT = ERROR_SEVERITY();
+        DECLARE @state INT = ERROR_STATE();
+        THROW @sev, @msg, @state;
     END CATCH
 END;
 GO
+
+
 
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: modificarDatosSUM
@@ -2843,8 +2793,8 @@ CREATE PROCEDURE itinerarios.modificarDatosSUM
     @idSitio INT,
     @tarifaHorariaSocio DECIMAL(10, 2),
     @tarifaHorariaInvitado DECIMAL(10, 2),
-    @horaMinimaReserva INT,
-    @horaMaximaReserva INT
+    @horaMinimaReserva int,
+    @horaMaximaReserva int
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -3428,131 +3378,140 @@ GO
 -- PROCEDIMIENTO: insertarReservaPaseActividad
 -- ------------------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE reservas.insertarReservaPaseActividad
-    @idSocio INT,
-    @categoriaSocio INT,
-    @categoriaPase VARCHAR(9),
-    @montoTotalActividad DECIMAL(10, 2),
-    @newIdReservaActividad INT OUTPUT -- Para devolver el ID generado
+  @idSocio            INT,
+  @categoriaSocio     INT,
+  @idActividad        INT,
+  @categoriaPase      VARCHAR(9)  -- 'Dia', 'Mensual', 'Temporada'
 AS
 BEGIN
-    SET NOCOUNT ON;
-    BEGIN TRY
-        -- Validaciones básicas
-        IF @idSocio < 0
-        BEGIN
-            THROW 50020, 'El ID de socio no puede ser negativo.', 1;
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Validar socio (0 = invitado)
+    IF @idSocio <> 0 AND NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+      THROW 70001, 'Socio no encontrado.', 1;
+
+    -- Validar categoriaPase
+    IF UPPER(@categoriaPase) NOT IN ('DIA','MENSUAL','TEMPORADA')
+      THROW 70002, 'Categoría de pase inválida.', 1;
+
+    -- Validar actividad
+    IF NOT EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad)
+      THROW 70003, 'Actividad de pileta no encontrada.', 1;
+
+    -- Calcular monto según pase y tipo de usuario
+    DECLARE @monto DECIMAL(10,2);
+    IF @idSocio = 0
+    BEGIN
+      -- Invitado
+      SELECT @monto =
+        CASE UPPER(@categoriaPase)
+          WHEN 'DIA'      THEN tarifaInvitadoPorDiaAdulto
+          WHEN 'MENSUAL'  THEN tarifaInvitadoPorMesAdulto
+          WHEN 'TEMPORADA' THEN tarifaInvitadoPorTemporadaAdulto
         END
-
-        IF @categoriaSocio <= 0
-        BEGIN
-            THROW 50021, 'La categoría de socio debe ser un número positivo.', 1;
+      FROM actividades.actividadPileta
+      WHERE idActividad = @idActividad;
+    END
+    ELSE
+    BEGIN
+      -- Socio
+      SELECT @monto =
+        CASE UPPER(@categoriaPase)
+          WHEN 'DIA'      THEN tarifaSocioPorDiaAdulto
+          WHEN 'MENSUAL'  THEN tarifaSocioPorMesAdulto
+          WHEN 'TEMPORADA' THEN tarifaSocioPorTemporadaAdulto
         END
+      FROM actividades.actividadPileta
+      WHERE idActividad = @idActividad;
+    END
 
-        IF @categoriaPase NOT IN ('Dia', 'Mensual', 'Temporada')
-        BEGIN
-            THROW 50022, 'La categoría de pase no es válida (Dia, Mensual, Temporada).', 1;
-        END
+    -- Insertar reserva
+    INSERT INTO reservas.reservaPaseActividad (
+      idSocio, categoriaSocio, categoriaPase, montoTotalActividad
+    ) VALUES (
+      @idSocio, @categoriaSocio, @categoriaPase, @monto
+    );
 
-        IF @montoTotalActividad <= 0
-        BEGIN
-            THROW 50023, 'El monto total de la actividad debe ser un valor positivo.', 1;
-        END
-
-        -- Validar existencia de idSocio en socios.socio
-        IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
-        BEGIN
-            THROW 50024, 'El ID de socio especificado no existe en la tabla de socios.', 1;
-        END
-
-        -- Validar existencia de categoriaSocio en socios.categoriaSocio
-        IF NOT EXISTS (SELECT 1 FROM socios.categoriaSocio WHERE idCategoria = @categoriaSocio)
-        BEGIN
-            THROW 50025, 'La categoría de socio especificada no existe en la tabla de categorías de socio.', 1;
-        END
-
-        -- Iniciar transacción
-        BEGIN TRANSACTION;
-
-        INSERT INTO reservas.reservaPaseActividad (
-            idSocio,
-            categoriaSocio,
-            categoriaPase,
-            montoTotalActividad,
-            estadoPase -- Se inserta con el valor DEFAULT 'Activo'
-        )
-        VALUES (@idSocio, @categoriaSocio, @categoriaPase, @montoTotalActividad);
-        SET @newIdReservaActividad = SCOPE_IDENTITY();
-        COMMIT TRANSACTION;
-        PRINT 'Reserva de Pase de Actividad insertada con éxito. ID: ' + CAST(@newIdReservaActividad AS VARCHAR(10));
-
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-        THROW;
-    END CATCH
+    COMMIT TRANSACTION;
+    PRINT 'Reserva de pase insertada. Monto: ' + CAST(@monto AS VARCHAR(10));
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
 END;
 GO
 
 -- ------------------------------------------------------------------------------
 -- PROCEDIMIENTO: modificarReservaPaseActividad
 -- ------------------------------------------------------------------------------
-CREATE OR ALTER PROCEDURE reservas.modificarReservaPaseActividad
-    @idReservaActividad INT,
-    @idSocioOriginal INT,
-    @newCategoriaSocio INT = NULL,
-    @newCategoriaPase VARCHAR(9) = NULL,
-    @newMontoTotalActividad DECIMAL(10, 2) = NULL
+CREATE OR ALTER PROCEDURE reservas.actualizarReservaPaseActividad
+  @idReservaActividad  INT,
+  @categoriaPase       VARCHAR(9),
+  @idActividad         INT
 AS
 BEGIN
-    SET NOCOUNT ON;
-    BEGIN TRY
-        -- Validar que la reserva de pase de actividad a modificar existe
-        IF NOT EXISTS (SELECT 1 FROM reservas.reservaPaseActividad WHERE idReservaActividad = @idReservaActividad AND idSocio = @idSocioOriginal)
-        BEGIN
-            THROW 50026, 'La reserva de pase de actividad especificada no existe.', 1;
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Verificar existencia
+    IF NOT EXISTS (SELECT 1 FROM reservas.reservaPaseActividad WHERE idReservaActividad = @idReservaActividad)
+      THROW 70011, 'Reserva no encontrada.', 1;
+
+    -- Validar categoriaPase
+    IF UPPER(@categoriaPase) NOT IN ('DIA','MENSUAL','TEMPORADA')
+      THROW 70012, 'Categoría de pase inválida.', 1;
+
+    -- Validar actividad
+    IF NOT EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = @idActividad)
+      THROW 70013, 'Actividad de pileta no encontrada.', 1;
+
+    -- Obtener idSocio y categoriaSocio
+    DECLARE @idSocio INT, @categoriaSoc INT;
+    SELECT @idSocio = idSocio, @categoriaSoc = categoriaSocio
+      FROM reservas.reservaPaseActividad
+     WHERE idReservaActividad = @idReservaActividad;
+
+    -- Recalcular monto
+    DECLARE @nuevoMonto DECIMAL(10,2);
+    IF @idSocio = 0
+    BEGIN
+      SELECT @nuevoMonto =
+        CASE UPPER(@categoriaPase)
+          WHEN 'DIA'      THEN tarifaInvitadoPorDiaAdulto
+          WHEN 'MENSUAL'  THEN tarifaInvitadoPorMesAdulto
+          WHEN 'TEMPORADA' THEN tarifaInvitadoPorTemporadaAdulto
         END
-
-        -- Validaciones para los nuevos valores
-        IF @newCategoriaSocio IS NOT NULL AND @newCategoriaSocio <= 0
-        BEGIN
-            THROW 50027, 'La nueva categoría de socio debe ser un número positivo.', 1;
+      FROM actividades.actividadPileta
+      WHERE idActividad = @idActividad;
+    END
+    ELSE
+    BEGIN
+      SELECT @nuevoMonto =
+        CASE UPPER(@categoriaPase)
+          WHEN 'DIA'      THEN tarifaSocioPorDiaAdulto
+          WHEN 'MENSUAL'  THEN tarifaSocioPorMesAdulto
+          WHEN 'TEMPORADA' THEN tarifaSocioPorTemporadaAdulto
         END
-        IF @newCategoriaSocio IS NOT NULL AND NOT EXISTS (SELECT 1 FROM socios.categoriaSocio WHERE idCategoria = @newCategoriaSocio)
-        BEGIN
-            THROW 50028, 'La nueva categoría de socio especificada no existe en la tabla de categorías de socio.', 1;
-        END
+      FROM actividades.actividadPileta
+      WHERE idActividad = @idActividad;
+    END
 
-        IF @newCategoriaPase IS NOT NULL AND @newCategoriaPase NOT IN ('Dia', 'Mensual', 'Temporada')
-        BEGIN
-            THROW 50029, 'La nueva categoría de pase no es válida (Dia, Mensual, Temporada).', 1;
-        END
+    -- Aplicar actualización
+    UPDATE reservas.reservaPaseActividad
+    SET
+      categoriaPase = @categoriaPase,
+      montoTotalActividad = @nuevoMonto
+    WHERE idReservaActividad = @idReservaActividad;
 
-        IF @newMontoTotalActividad IS NOT NULL AND @newMontoTotalActividad <= 0
-        BEGIN
-            THROW 50030, 'El nuevo monto total de la actividad debe ser un valor positivo.', 1;
-        END
-
-        -- Iniciar transacción
-        BEGIN TRANSACTION;
-        UPDATE reservas.reservaPaseActividad
-        SET
-            categoriaSocio = ISNULL(@newCategoriaSocio, categoriaSocio),
-            categoriaPase = ISNULL(@newCategoriaPase, categoriaPase),
-            montoTotalActividad = ISNULL(@newMontoTotalActividad, montoTotalActividad)
-        WHERE
-            idReservaActividad = @idReservaActividad
-            AND idSocio = @idSocioOriginal;
-
-        COMMIT TRANSACTION;
-        PRINT 'Reserva de Pase de Actividad modificada con éxito.';
-
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-        THROW;
-    END CATCH
+    COMMIT TRANSACTION;
+    PRINT 'Reserva actualizada. Nuevo monto: ' + CAST(@nuevoMonto AS VARCHAR(10));
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
 END;
 GO
 
@@ -3560,32 +3519,22 @@ GO
 -- PROCEDIMIENTO: eliminarReservaPaseActividad
 -- ------------------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE reservas.eliminarReservaPaseActividad
-    @idReservaActividad INT,
-    @idSocio INT
+  @idReservaActividad INT
 AS
 BEGIN
-    SET NOCOUNT ON;
-    BEGIN TRY
-        -- Validar que la reserva de pase de actividad a borrar existe y está activa
-        IF NOT EXISTS (SELECT 1 FROM reservas.reservaPaseActividad WHERE idReservaActividad = @idReservaActividad AND idSocio = @idSocio AND estadoPase = 'Activo')
-        BEGIN
-            THROW 50031, 'La reserva de pase de actividad especificada no existe o ya está inactiva.', 1;
-        END
+  SET NOCOUNT ON;
+  BEGIN TRY
+    IF NOT EXISTS (SELECT 1 FROM reservas.reservaPaseActividad WHERE idReservaActividad = @idReservaActividad)
+      THROW 70021, 'Reserva no encontrada.', 1;
 
-        -- Iniciar transacción
-        BEGIN TRANSACTION;
-        UPDATE reservas.reservaPaseActividad
-        SET estadoPase = 'Inactivo'
-        WHERE idReservaActividad = @idReservaActividad
-              AND idSocio = @idSocio;
-        COMMIT TRANSACTION;
-        PRINT 'Reserva de Pase de Actividad marcada como inactiva (borrado lógico) con éxito.';
+    DELETE FROM reservas.reservaPaseActividad
+    WHERE idReservaActividad = @idReservaActividad;
 
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0
-            ROLLBACK TRANSACTION;
-        THROW;
-    END CATCH
+    PRINT 'Reserva eliminada exitosamente.';
+  END TRY
+  BEGIN CATCH
+    DECLARE @msg NVARCHAR(4000)=ERROR_MESSAGE(), @sev INT=ERROR_SEVERITY(), @st INT=ERROR_STATE();
+    THROW @sev, @msg, @st;
+  END CATCH
 END;
 GO
