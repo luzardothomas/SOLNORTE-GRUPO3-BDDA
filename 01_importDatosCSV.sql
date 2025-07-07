@@ -43,7 +43,7 @@ EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
 EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;  
 
 -- ¿Puede verlo el motor?
-EXEC xp_cmdshell 'dir "C:\Importar\dataImport\grupoFamiliar.csv"';
+EXEC xp_cmdshell 'dir "D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\grupoFamiliar.csv"';
 
 CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar
   @FilePath NVARCHAR(255)
