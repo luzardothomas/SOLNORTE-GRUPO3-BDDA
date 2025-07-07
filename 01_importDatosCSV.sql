@@ -31,7 +31,7 @@ GO
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV de datos del grupo familiar.
 -- ************************************************************************************************
 CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar --REVISAR BIEN EL PORQUE NO ANDA (PARECE SER UN ERROR DE BLOQUEOS O PERMISOS PERO NO LO ENCUENTRO)
-    @FilePath NVARCHAR(255) WITH EXECUTE AS OWNER
+    @FilePath NVARCHAR(255)
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -133,11 +133,82 @@ BEGIN
 END;
 GO
 
+USE master;
+GO
+ALTER SERVER ROLE bulkadmin ADD MEMBER [LA-BESTIA\santi];
+GO
+ALTER SERVER ROLE bulkadmin ADD MEMBER [MicrosoftAccount\santiagocodina@live.com.ar];
+GO
+
+ALTER DATABASE [Com2900G03] SET TRUSTWORTHY ON;
+GO
+USE Com2900G03;
+CREATE CERTIFICATE Cert_BulkImport
+  ENCRYPTION BY PASSWORD = 'StrongPass#1'
+  WITH SUBJECT = 'Cert para BULK INSERT';
+GO
+
+ADD SIGNATURE TO OBJECT::socios.importarGrupoFamiliar
+  BY CERTIFICATE Cert_BulkImport
+  WITH PASSWORD = 'StrongPass#1';
+GO
+
+CREATE USER CertUser FROM CERTIFICATE Cert_BulkImport;
+GRANT ADMINISTER BULK OPERATIONS TO CertUser;
+GO
+
+SELECT 
+  CASE WHEN SUSER_SNAME() = 'sa' THEN 1 ELSE 0 END AS EsLoginSA;
+  -- Lista todos los logins con sysadmin
 
 -- CARGAR DATOS DEL CSV
-EXEC socios.importarGrupoFamiliar
-	@FilePath = 'C:\Importar\dataImport\grupoFamiliar.csv';
+USE Com2900G03;
 GO
+
+EXEC socios.importarGrupoFamiliar
+  @FilePath = N'C:\Importar\dataImport\grupoFamiliar.csv';
+GO
+
+SELECT servicename,
+       service_account
+  FROM sys.dm_server_services
+ WHERE servicename LIKE 'SQL Server (%';  -- Filtra solo instancias
+
+SELECT *
+FROM OPENROWSET(
+   BULK N'C:\Importar\dataImport\grupoFamiliar.csv',
+   FORMAT = 'CSV',
+   FIRSTROW = 2
+) AS Data;
+
+-- 1) En Com2900G03, “respaldar” el certificado a un fichero .cer
+USE Com2900G03;
+GO
+BACKUP CERTIFICATE Cert_BulkImport
+  TO FILE = 'C:\Temp\Cert_BulkImport.cer';
+GO
+
+-- 2) En master, crear un certificado a partir de ese fichero
+USE master;
+GO
+CREATE CERTIFICATE Cert_BulkImport_Master
+  FROM FILE = 'C:\Temp\Cert_BulkImport.cer';
+GO
+
+-- 3) Crear el login asociado al certificado en master
+CREATE LOGIN CertLogin
+  FROM CERTIFICATE Cert_BulkImport_Master;
+GO
+
+-- 4) Concederle el permiso de BULK INSERT
+GRANT ADMINISTER BULK OPERATIONS TO CertLogin;
+GO
+
+
+
+SELECT servicename, service_account
+  FROM sys.dm_server_services
+  WHERE servicename LIKE 'SQL Server (%';
 
 SELECT 
   rp.name AS RoleName, 
@@ -150,6 +221,12 @@ WHERE rp.name = 'bulkadmin';
 -- VER DATOS CARGADOS
 SELECT * FROM socios.grupoFamiliar;
 GO
+
+SELECT SUSER_SNAME()      AS LoginActual,  
+       ORIGINAL_LOGIN()   AS LoginOriginal,  
+       SYSTEM_USER        AS UsuarioSQL;
+
+	   ALTER SERVER ROLE bulkadmin ADD MEMBER [LA-BESTIA\santi];
 
 -- ========================================================================
 -- Procedimiento: pagos.importarPagosCuotas (5° ejecutar)
