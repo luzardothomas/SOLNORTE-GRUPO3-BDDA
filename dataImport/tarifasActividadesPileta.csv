@@ -1,7 +1,13 @@
-﻿;;Socios;Invitados;Vigente hasta
-Valor del dia;Adultos;25000,00;30000,00;28/2/2025
-;Menores de 12 años;15000,00;2000,00;28/2/2025
-Valor de temporada;Adultos;2000000,00;;28/2/2025
-;Menores de 12 años;1200000,00;;28/2/2025
-Valor del Mes;Adultos;625000,00;;28/2/2025
-;Menores de 12 años;375000,00;;28/2/2025
+﻿Descripcion;Valor;Vigente hasta
+Valor del dia Socios Adultos;25000;28/2/2025
+Valor de temporada Socios Adultos;2000000;28/2/2025
+Valor del mes Socios Adultos;625000;28/2/2025
+Valor del dia Socios Menores de 12 años;15000;28/2/2025
+Valor de temporada Socios Menores de 12 años;1200000;28/2/2025
+Valor del mes Socios Menores de 12 años;375000;28/2/2025
+Valor del dia Invitados Adultos;30000;28/2/2025
+Valor de temporada Invitados Adultos;;28/2/2025
+Valor del mes Invitados Adultos;;28/2/2025
+Valor del dia Invitados Menores de 12 años;20000;28/2/2025
+Valor de temporada Invitados Menores de 12 años;;28/2/2025
+Valor del mes Invitados Menores de 12 años;;28/2/2025

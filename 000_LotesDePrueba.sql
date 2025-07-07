@@ -484,3 +484,185 @@ GO
 
 -- VER DATOS CARGADOS
 SELECT * FROM actividades.deporteActivo
+
+-- ******************************************************************
+-- CARGAR DATOS EN CUERPO FACTURA Y FACTURA ACTIVO PARA LOS REPORTES
+-- ******************************************************************
+
+DELETE FROM pagos.cuerpoFactura;
+DBCC CHECKIDENT ('pagos.cuerpoFactura', RESEED, 0);
+DELETE FROM pagos.facturaActiva;
+DBCC CHECKIDENT ('pagos.facturaActiva', RESEED, 0);
+
+-- Inserción de datos en pagos.facturaActiva (para 2024 y 2025)
+INSERT INTO pagos.facturaActiva (idSocio, categoriaSocio, estadoFactura, fechaEmision, fechaPrimerVencimiento, fechaSegundoVencimiento) VALUES
+-- Facturas de 2024 (Pagadas)
+(4001, 1, 'Pagada', '2024-01-10', '2024-01-20', '2024-01-30'), -- Enero
+(4002, 1, 'Pagada', '2024-01-15', '2024-01-25', '2024-02-04'),
+(4003, 1, 'Pagada', '2024-02-05', '2024-02-15', '2024-02-25'), -- Febrero
+(4004, 1, 'Pagada', '2024-02-20', '2024-03-01', '2024-03-11'),
+(4005, 1, 'Pagada', '2024-03-12', '2024-03-22', '2024-04-01'), -- Marzo
+(4006, 1, 'Pagada', '2024-03-25', '2024-04-04', '2024-04-14'),
+(4007, 1, 'Pagada', '2024-04-01', '2024-04-11', '2024-04-21'), -- Abril
+(4008, 1, 'Pagada', '2024-04-18', '2024-04-28', '2024-05-08'),
+(4009, 1, 'Pagada', '2024-05-03', '2024-05-13', '2024-05-23'), -- Mayo
+(4010, 1, 'Pagada', '2024-05-22', '2024-06-01', '2024-06-11'),
+(4011, 1, 'Pagada', '2024-06-10', '2024-06-20', '2024-06-30'), -- Junio
+(4012, 1, 'Pagada', '2024-06-28', '2024-07-08', '2024-07-18'),
+(4013, 1, 'Pagada', '2024-07-07', '2024-07-17', '2024-07-27'), -- Julio
+(4014, 1, 'Pagada', '2024-07-19', '2024-07-29', '2024-08-08'),
+(4015, 1, 'Pagada', '2024-08-08', '2024-08-18', '2024-08-28'), -- Agosto
+(4016, 1, 'Pagada', '2024-08-21', '2024-08-31', '2024-09-10'),
+(4017, 1, 'Pagada', '2024-09-05', '2024-09-15', '2024-09-25'), -- Septiembre
+(4018, 1, 'Pagada', '2024-09-17', '2024-09-27', '2024-10-07'),
+(4019, 1, 'Pagada', '2024-10-10', '2024-10-20', '2024-10-30'), -- Octubre
+(4020, 1, 'Pagada', '2024-10-25', '2024-11-04', '2024-11-14'),
+(4021, 1, 'Pagada', '2024-11-01', '2024-11-11', '2024-11-21'), -- Noviembre
+(4022, 1, 'Pagada', '2024-11-15', '2024-11-25', '2024-12-05'),
+(4023, 1, 'Pagada', '2024-12-09', '2024-12-19', '2024-12-29'), -- Diciembre
+(4024, 1, 'Pagada', '2024-12-20', '2024-12-30', '2025-01-09'),
+-- Facturas de 2025 (Pagadas y Pendientes para mostrar filtro)
+(4028, 1, 'Pagada', '2025-01-05', '2025-01-15', '2025-01-25'),
+(4030, 1, 'Pagada', '2025-01-10', '2025-01-20', '2025-01-30'),
+(4114, 1, 'Pendiente', '2025-01-20', '2025-01-30', '2025-02-09'), -- Pendiente, no debería aparecer en el reporte
+(4055, 1, 'Pagada', '2025-02-01', '2025-02-11', '2025-02-21'),
+(4115, 1, 'Pagada', '2025-02-14', '2025-02-24', '2025-03-06'),
+(4065, 1, 'Pagada', '2025-03-01', '2025-03-11', '2025-03-21'),
+(4046, 1, 'Pagada', '2025-03-10', '2025-03-20', '2025-03-30'),
+(4089, 1, 'Pagada', '2025-04-05', '2025-04-15', '2025-04-25'),
+(4034, 1, 'Pagada', '2025-04-20', '2025-04-30', '2025-05-10'),
+(4090, 1, 'Pagada', '2025-05-01', '2025-05-11', '2025-05-21'),
+(4004, 1, 'Pendiente', '2025-05-15', '2025-05-25', '2025-06-04'); -- Pendiente
+GO
+
+-- Inserción de datos en pagos.cuerpoFactura
+-- 1. Eliminar la clave foránea existente que apunta a pagos.facturaEmitida
+IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK__cuerpoFac__idFac__25518C17' AND parent_object_id = OBJECT_ID('pagos.cuerpoFactura'))
+BEGIN
+    ALTER TABLE pagos.cuerpoFactura
+    DROP CONSTRAINT FK__cuerpoFac__idFac__25518C17;
+    PRINT 'Clave foránea FK__cuerpoFac__idFac__25518C17 eliminada de pagos.cuerpoFactura.';
+END
+GO
+
+-- 2. Añadir una nueva clave foránea que apunte a pagos.facturaActiva
+ALTER TABLE pagos.cuerpoFactura
+ADD CONSTRAINT FK_cuerpoFactura_facturaActiva FOREIGN KEY (idFactura)
+REFERENCES pagos.facturaActiva(idFactura);
+PRINT 'Nueva clave foránea FK_cuerpoFactura_facturaActiva creada en pagos.cuerpoFactura apuntando a pagos.facturaActiva.';
+GO
+
+MERGE pagos.cuerpoFactura AS Target
+USING (
+    SELECT
+        fa.idFactura,
+        1 AS idItemFactura, -- Siempre 1, ya que cada factura tiene un solo item principal de actividad
+        'Mensual' AS tipoItem,
+        CASE
+            WHEN fa.idFactura % 6 = 1 THEN 'Futsal'
+            WHEN fa.idFactura % 6 = 2 THEN 'Vóley'
+            WHEN fa.idFactura % 6 = 3 THEN 'Taekwondo'
+            WHEN fa.idFactura % 6 = 4 THEN 'Baile artístico'
+            WHEN fa.idFactura % 6 = 5 THEN 'Natación'
+            WHEN fa.idFactura % 6 = 0 THEN 'Ajedrez'
+            ELSE 'Desconocido' -- En caso de que idFactura % 6 no caiga en los casos esperados
+        END AS descripcionItem,
+        CASE
+			WHEN fa.idFactura % 6 = 1 THEN 25000.00
+            WHEN fa.idFactura % 6 = 2 THEN 30000.00
+            WHEN fa.idFactura % 6 = 3 THEN 25000.00
+            WHEN fa.idFactura % 6 = 4 THEN 30000.00
+            WHEN fa.idFactura % 6 = 5 THEN 45000.00
+            WHEN fa.idFactura % 6 = 6 THEN 2000.00
+            ELSE 0.00
+        END AS importeItem
+    FROM
+        pagos.facturaActiva fa
+) AS Source (idFactura, idItemFactura, tipoItem, descripcionItem, importeItem)
+ON (Target.idFactura = Source.idFactura AND Target.idItemFactura = Source.idItemFactura)
+WHEN MATCHED THEN
+    UPDATE SET
+        Target.tipoItem = Source.tipoItem,
+        Target.descripcionItem = Source.descripcionItem,
+        Target.importeItem = Source.importeItem
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (idFactura, idItemFactura, tipoItem, descripcionItem, importeItem)
+    VALUES (Source.idFactura, Source.idItemFactura, Source.tipoItem, Source.descripcionItem, Source.importeItem);
+GO
+
+-- VER DATOS CARGADOS
+SELECT * FROM pagos.cuerpoFactura;
+SELECT * FROM pagos.facturaActiva;
+
+-- ******************************************************************
+-- CARGAR DATOS EN ESTADO MEMBRESIA SOCIO PARA LOS REPORTES
+-- ******************************************************************
+
+-- Paso 1: Eliminar la tabla si existe para recrearla con otra estructura
+IF OBJECT_ID('socios.estadoMembresiaSocio', 'U') IS NOT NULL
+BEGIN
+    DROP TABLE socios.estadoMembresiaSocio;
+    PRINT 'Tabla socios.estadoMembresiaSocio eliminada para recreación.';
+END
+GO
+
+-- Paso 2: Recrear la tabla socios.estadoMembresiaSocio con otra estructura
+CREATE TABLE socios.estadoMembresiaSocio (
+    idSocio INT NOT NULL, -- Ya NO es IDENTITY
+    tipoCategoriaSocio VARCHAR(15) CHECK (tipoCategoriaSocio IN ('Cadete', 'Mayor', 'Menor')),
+    estadoMorosidadMembresia VARCHAR(22) NOT NULL CHECK (estadoMorosidadMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
+    fechaVencimientoMembresia DATE NOT NULL,
+    CONSTRAINT PK_estadoMembresiaSocio PRIMARY KEY (idSocio, fechaVencimientoMembresia),
+    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
+);
+GO
+
+-- Inserción de datos en socios.estadoMembresiaSocio
+INSERT INTO socios.estadoMembresiaSocio (idSocio, tipoCategoriaSocio, fechaVencimientoMembresia, estadoMorosidadMembresia) VALUES
+-- Socio 4001: Moroso recurrente (4 incumplimientos en 2024)
+(4001, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
+(4001, 'Mayor', '2024-02-29', 'Moroso-1er Vencimiento'),
+(4001, 'Mayor', '2024-03-31', 'Moroso-2do Vencimiento'),
+(4001, 'Mayor', '2024-04-30', 'Inactivo'),
+(4001, 'Mayor', '2024-05-31', 'Activo'),
+(4001, 'Mayor', '2024-06-30', 'Moroso-1er Vencimiento'),
+-- Socio 4002: Moroso recurrente (3 incumplimientos en 2024)
+(4002, 'Mayor', '2024-01-31', 'Activo'),
+(4002, 'Mayor', '2024-02-29', 'Moroso-1er Vencimiento'),
+(4002, 'Mayor', '2024-03-31', 'Moroso-1er Vencimiento'),
+(4002, 'Mayor', '2024-04-30', 'Moroso-2do Vencimiento'),
+(4002, 'Mayor', '2024-05-31', 'Activo'),
+-- Socio 4003: Moroso recurrente (4 incumplimientos en 2024)
+(4003, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
+(4003, 'Mayor', '2024-02-29', 'Moroso-2do Vencimiento'),
+(4003, 'Mayor', '2024-03-31', 'Inactivo'),
+(4003, 'Mayor', '2024-04-30', 'Moroso-1er Vencimiento'),
+(4003, 'Mayor', '2024-05-31', 'Activo'),
+-- Socio 4004: Solo 2 incumplimientos (no aparecerá en el reporte con >2)
+(4004, 'Mayor', '2024-01-31', 'Activo'),
+(4004, 'Mayor', '2024-02-29', 'Activo'),
+(4004, 'Mayor', '2024-03-31', 'Moroso-1er Vencimiento'),
+(4004, 'Mayor', '2024-04-30', 'Moroso-2do Vencimiento'),
+(4004, 'Mayor', '2024-05-31', 'Activo'),
+-- Socio 4005: Sin incumplimientos en 2024
+(4005, 'Mayor', '2024-01-31', 'Activo'),
+(4005, 'Mayor', '2024-02-29', 'Activo'),
+(4005, 'Mayor', '2024-03-31', 'Activo'),
+(4005, 'Mayor', '2024-04-30', 'Activo'),
+(4005, 'Mayor', '2024-05-31', 'Activo'),
+-- Socio 4006: Moroso recurrente (3 incumplimientos en 2024, mezclado con 2025)
+(4006, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
+(4006, 'Mayor', '2024-02-29', 'Activo'),
+(4006, 'Mayor', '2024-03-31', 'Moroso-2do Vencimiento'),
+(4006, 'Mayor', '2024-04-30', 'Activo'),
+(4006, 'Mayor', '2024-05-31', 'Inactivo'),
+(4006, 'Mayor', '2025-01-31', 'Moroso-1er Vencimiento'),
+-- Socio 4007: Moroso recurrente (3 incumplimientos en 2025)
+(4007, 'Mayor', '2025-01-31', 'Moroso-1er Vencimiento'),
+(4007, 'Mayor', '2025-02-28', 'Moroso-1er Vencimiento'),
+(4007, 'Mayor', '2025-03-31', 'Moroso-2do Vencimiento'),
+(4007, 'Mayor', '2025-04-30', 'Activo');
+GO
+
+-- VER DATOS CARGADOS
+SELECT * FROM socios.estadoMembresiaSocio;

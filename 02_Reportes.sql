@@ -12,7 +12,16 @@ USE Com2900G03;
 GO
 
 -- =============================================
--- Reporte 1: Morosos Recurrentes
+-- Reporte 1: Morosos Recurrentes (FUNCIONA)
+-- Descripcion: Reporte de los socios morosos, que hayan incumplido en más de dos oportunidades dado un rango de fechas a ingresar. 
+-- El reporte debe contener los siguientes datos:
+--												Nombre del reporte: Morosos Recurrentes
+--												Período: rango de fechas
+--												Nro de socio
+--												Nombre y apellido.
+--												Mes incumplido
+--												Ordenados de Mayor a menor por ranking de morosidad
+-- El mismo debe ser desarrollado utilizando Windows Function.
 -- =============================================
 CREATE OR ALTER PROCEDURE reporte_morososRecurrentes
     @FechaInicio DATE,
@@ -45,57 +54,68 @@ BEGIN
         [Año Incumplido],
         [Ranking Morosidad]
     FROM MorososCTE
-    WHERE [Ranking Morosidad] > 2
-    ORDER BY [Ranking Morosidad] DESC;
+    WHERE [Ranking Morosidad] > 2 -- Filtra solo a los socios con más de 2 incumplimientos
+    ORDER BY [Ranking Morosidad] DESC, [Nro de Socio], [Año Incumplido], [Mes Incumplido];
 END;
 GO
--- Ejemplo de Ejecución:
-EXEC reporte_morososRecurrentes @FechaInicio = '2024-01-01', @FechaFin = '2024-12-31';
-GO;
 
--- =============================================
--- Reporte 2: Acumulado Mensual de Ingresos por Actividad Deportiva
--- =============================================
+-- EJECUCION DEL REPORTE
+EXEC reporte_morososRecurrentes @FechaInicio = '2024-01-01', @FechaFin = '2024-12-31';
+GO
+
+EXEC reporte_morososRecurrentes @FechaInicio = '2025-01-01', @FechaFin = '2025-12-31';
+GO
+
+-- ============================================================================
+-- Reporte 2: Acumulado Mensual de Ingresos por Actividad Deportiva (FUNCIONA)
+-- Descripcion: Reporte acumulado mensual de ingresos por actividad deportiva 
+--				al momento en que se saca el reporte tomando como inicio enero.
+-- ============================================================================
 CREATE OR ALTER PROCEDURE reporte_ingresosPorActividadMensual
     @AnioActual INT = NULL -- Opcional: Para especificar el año, por defecto GETDATE()
 AS
 BEGIN
     SET NOCOUNT ON;
-    SET @AnioActual = ISNULL(@AnioActual, YEAR(GETDATE())); -- Si no se especifica el año, usar el año actual
+    SET @AnioActual = ISNULL(@AnioActual, YEAR(GETDATE())); -- Si no se especifica el año, se usa el año actual
+
     SELECT
         FORMAT(cf.fechaEmision, 'yyyy-MM') AS 'Año-Mes',
         DATENAME(month, cf.fechaEmision) AS 'Mes',
-        ISNULL(df.descripcion, 'Otros/Desconocido') AS 'Actividad Deportiva',
+        ISNULL(dd.descripcion, 'Otros/Desconocido') AS 'Actividad Deportiva',
         SUM(cuerpo.importeItem) AS 'Ingreso Mensual Acumulado'
     FROM
-        pagos.facturaActiva cf -- CORRECCIÓN: Usar tabla que contiene estadoFactura
+        pagos.facturaActiva cf
     INNER JOIN
         pagos.cuerpoFactura cuerpo ON cf.idFactura = cuerpo.idFactura
     LEFT JOIN
-        actividades.deporteDisponible df ON cuerpo.descripcionItem = df.descripcion
+        actividades.deporteDisponible dd ON cuerpo.descripcionItem = dd.descripcion
     WHERE
         YEAR(cf.fechaEmision) = @AnioActual
         AND MONTH(cf.fechaEmision) >= 1 -- Desde enero
-        AND cf.estadoFactura = 'Pagada' -- Ahora disponible en facturaActiva
+        AND cf.estadoFactura = 'Pagada'
     GROUP BY
         FORMAT(cf.fechaEmision, 'yyyy-MM'),
         DATENAME(month, cf.fechaEmision),
-        ISNULL(df.descripcion, 'Otros/Desconocido')
+        ISNULL(dd.descripcion, 'Otros/Desconocido')
     ORDER BY
         FORMAT(cf.fechaEmision, 'yyyy-MM'),
         'Actividad Deportiva';
 END;
 GO
 
--- Ejemplo de Ejecución:
+-- EJECUCION DEL REPORTE
 EXEC reporte_ingresosPorActividadMensual @AnioActual = 2024; -- Para el año 2024
-GO;
-EXEC reporte_ingresosPorActividadMensual; -- Para el año actual
-GO;
+GO
 
--- =============================================
--- Reporte 3: Socios con Actividad Alternada (Inasistencias)
--- =============================================
+EXEC reporte_ingresosPorActividadMensual; -- Para el año actual
+GO
+
+-- =====================================================================
+-- Reporte 3: Socios con Actividad Alternada (Inasistencias) (FUNCIONA)
+-- Descripcion: Reporte de la cantidad de socios que han realizado alguna actividad de forma alternada
+--				(inasistencias) por categoría de socios y actividad, ordenado según cantidad de inasistencias
+--				ordenadas de mayor a menor.
+-- =====================================================================
 CREATE OR ALTER PROCEDURE reporte_sociosConInasistencias
 AS
 BEGIN
@@ -125,19 +145,21 @@ BEGIN
         cms.tipo,
         dd.descripcion
     HAVING
-        SUM(CASE WHEN pas.estadoPresentismo IN ('A', 'J') THEN 1 ELSE 0 END) > 0 -- Solo socios con al menos 1 inasistencia
+        SUM(CASE WHEN pas.estadoPresentismo IN ('A', 'J') THEN 1 ELSE 0 END) > 0 -- Socios con al menos 1 inasistencia
         AND SUM(CASE WHEN pas.estadoPresentismo = 'P' THEN 1 ELSE 0 END) > 0     -- Y al menos 1 asistencia (para "alternada")
     ORDER BY
-        'Cantidad Inasistencias' DESC; -- Ordenado de mayor a menor por cantidad de inasistencias
+        'Cantidad Inasistencias' DESC;
 END;
 GO
 
--- Ejemplo de Ejecución:
+-- EJECUCION DEL REPORTE
 EXEC reporte_sociosConInasistencias;
 
--- =============================================
--- Reporte 4: Socios con Cero Asistencias a Actividad
--- =============================================
+-- ===============================================================
+-- Reporte 4: Socios con Cero Asistencias a Actividad (FUNCIONA)
+-- Descripcion: Reporte que contenga a los socios que no han asistido a alguna clase 
+--				de la actividad que realizan. El reporte debe contener: Nombre, Apellido, edad, categoría y la actividad
+-- ===============================================================
 CREATE OR ALTER PROCEDURE reporte_sociosSinAsistencia
 AS
 BEGIN
@@ -157,7 +179,10 @@ BEGIN
     INNER JOIN
         actividades.deporteDisponible dd ON da.idDeporte = dd.idDeporte
     LEFT JOIN
-        actividades.presentismoActividadSocio pas ON da.idDeporteActivo = pas.idDeporteActivo AND s.idSocio = pas.idSocio
+        actividades.presentismoActividadSocio pas ON da.idDeporteActivo = pas.idDeporteActivo
+                                               AND s.idSocio = pas.idSocio
+    WHERE
+        pas.idSocio IS NULL
     GROUP BY
         s.idSocio,
         s.nombre,
@@ -165,12 +190,10 @@ BEGIN
         s.fechaNacimiento,
         cms.tipo,
         dd.descripcion
-    HAVING
-        COUNT(CASE WHEN pas.estadoPresentismo = 'P' THEN 1 ELSE NULL END) = 0 -- No tiene asistencias registradas
-        AND COUNT(pas.idSocio) > 0; -- Pero sí tiene registros de presentismo (solo 'A' o 'J' o no tiene)
-        -- La condición COUNT(pas.idSocio) > 0 asegura que ha habido un intento de registrar presentismo,
+    ORDER BY
+        s.nombre, s.apellido, dd.descripcion;
 END;
 GO
 
--- Ejemplo de Ejecución:
+-- EJECUCION DEL REPORTE
 EXEC reporte_sociosSinAsistencia;
