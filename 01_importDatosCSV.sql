@@ -23,6 +23,9 @@ SELECT name
  ALTER LOGIN sa WITH PASSWORD = 'M1x3dMode!2025';
 GO
 
+ALTER LOGIN sa ENABLE;
+GO
+
 DECLARE @loginMode INT;
 EXEC xp_instance_regread  
     N'HKEY_LOCAL_MACHINE',
@@ -183,10 +186,12 @@ USE Com2900G03;
 GO
 
 EXEC socios.importarGrupoFamiliar
-  @FilePath = N'C:\Importar\dataImport\grupoFamiliar.csv';
+  @FilePath = N'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\grupoFamiliar.csv';
 GO
 
-SELECT servicename,
+SELECT * 
+
+/* SELECT servicename,
        service_account
   FROM sys.dm_server_services
  WHERE servicename LIKE 'SQL Server (%';  -- Filtra solo instancias
@@ -231,18 +236,18 @@ SELECT
 FROM sys.server_role_members m
 JOIN sys.server_principals rp ON m.role_principal_id = rp.principal_id
 JOIN sys.server_principals mp ON m.member_principal_id = mp.principal_id
-WHERE rp.name = 'bulkadmin';
+WHERE rp.name = 'bulkadmin';*/ 
 
 -- VER DATOS CARGADOS
 SELECT * FROM socios.grupoFamiliar;
 GO
 
-SELECT SUSER_SNAME()      AS LoginActual,  
+/* SELECT SUSER_SNAME()      AS LoginActual,  
        ORIGINAL_LOGIN()   AS LoginOriginal,  
        SYSTEM_USER        AS UsuarioSQL;
 
 	   ALTER SERVER ROLE bulkadmin ADD MEMBER [LA-BESTIA\santi];
-GO
+GO*/
 
 -- ************************************************************************************************
 -- Procedimiento: socios.importarCategoriasSocio (1° ejecutar - FUNCIONA)

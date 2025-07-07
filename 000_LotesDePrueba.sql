@@ -486,7 +486,7 @@ GO
 SELECT * FROM actividades.deporteActivo
 
 -- ******************************************************************
--- CARGAR DATOS EN CUERPO FACTURA Y FACTURA ACTIVO PARA LOS REPORTES
+-- CARGAR DATOS EN CUERPO FACTURA Y FACTURA ACTIVO PARA LOS REPORTES (reporte_ingresosPorActividadMensua)
 -- ******************************************************************
 
 DELETE FROM pagos.cuerpoFactura;
@@ -595,7 +595,7 @@ SELECT * FROM pagos.cuerpoFactura;
 SELECT * FROM pagos.facturaActiva;
 
 -- ******************************************************************
--- CARGAR DATOS EN ESTADO MEMBRESIA SOCIO PARA LOS REPORTES
+-- CARGAR DATOS EN ESTADO MEMBRESIA SOCIO PARA LOS REPORTES (reporte_morososRecurrente)
 -- ******************************************************************
 
 -- Paso 1: Eliminar la tabla si existe para recrearla con otra estructura
