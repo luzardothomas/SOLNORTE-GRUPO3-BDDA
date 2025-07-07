@@ -418,201 +418,217 @@ GO
 -- Parámetros:
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene las tarifas de pileta.
 -- ************************************************************************************************
-USE master;
-GO
 
-GRANT ADMINISTER BULK OPERATIONS TO [DESKTOP-7T2HK9B\santi];
-GO
+EXEC xp_cmdshell 'type C:\Importar\dataImport\tarifasActividadesPileta.csv';
+
+IF OBJECT_ID('tempdb..#StagingPiletaActividad') IS NOT NULL
+  DROP TABLE #StagingPiletaActividad;
+
+-- 1) Tabla staging *sin* identity
+CREATE TABLE #StagingPiletaActividad (
+    DescripcionCsv      NVARCHAR(100),
+    ValorCsv            NVARCHAR(50),
+    VigenciaHastaCsv    NVARCHAR(20)
+);
+
+-- 2) Bulk insert usando exactly tu delimitador ';'
+BULK INSERT #StagingPiletaActividad
+  FROM 'C:\Importar\dataImport\tarifasActividadesPileta.csv'
+  WITH
+  (
+    FIRSTROW        = 2,
+    DATAFILETYPE    = 'char',       -- lee como ANSI/UTF8 sin BOM problemas
+    FIELDTERMINATOR = ';',
+    ROWTERMINATOR   = '0x0a',       -- solo LF
+    TABLOCK
+  );
+
+-- 3) Verifica que las filas llegaron bien
+SELECT
+  ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS RowNum,
+  DescripcionCsv, ValorCsv, VigenciaHastaCsv
+FROM #StagingPiletaActividad;
 
 CREATE OR ALTER PROCEDURE actividades.importarDeportesPileta
-    @FilePath NVARCHAR(255) WITH EXECUTE AS OWNER
+    @FilePath NVARCHAR(255)
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Definición de valores por defecto (actualizados según tu solicitud)
-    DECLARE @DefaultTariffValue DECIMAL(10, 2) = 0.01; -- Debe ser > 0 por los CHECK constraints
-    DECLARE @DefaultApertura TIME = '10:00:00';
-    DECLARE @DefaultCierre TIME = '20:00:00';
-    DECLARE @DefaultVigenciaHasta DATE = '2025-02-28'; -- Valor por defecto solicitado
+    DECLARE 
+        @DefaultTariffValue   DECIMAL(10,2) = 0.01,
+        @DefaultApertura      TIME          = '10:00:00',
+        @DefaultCierre        TIME          = '20:00:00',
+        @DefaultVigenciaHasta DATE          = '2025-02-28',
+        @sql                  NVARCHAR(MAX);
 
-    DECLARE @DynamicSql NVARCHAR(MAX);
-
-    -- Paso 1: Limpiar y crear la tabla temporal de staging para que coincida con el CSV
+    ---------------------------
+    -- 1) STAGING
+    ---------------------------
     IF OBJECT_ID('tempdb..#StagingPiletaActividad') IS NOT NULL
         DROP TABLE #StagingPiletaActividad;
-    
+
     CREATE TABLE #StagingPiletaActividad (
-        RowNum INT IDENTITY(1,1) PRIMARY KEY,
-        DescripcionCsv NVARCHAR(100), -- Columna que contiene "TipoValor TipoPersona"
-        ValorCsv NVARCHAR(50),       -- Columna que contiene la tarifa (puede ser vacía)
-        VigenciaHastaCsv NVARCHAR(20)
+        DescripcionCsv      NVARCHAR(100),
+        ValorCsv            NVARCHAR(50),
+        VigenciaHastaCsv    NVARCHAR(20)
     );
 
-    -- Paso 2: Limpiar y crear la tabla temporal para los datos procesados
+    ---------------------------
+    -- 2) BULK INSERT
+    ---------------------------
+    SET @sql = N'
+      BULK INSERT #StagingPiletaActividad
+      FROM ''' + @FilePath + N'''
+      WITH
+      (
+        DATAFILETYPE    = ''char'',
+        CODEPAGE        = ''65001'',
+        FIRSTROW        = 2,
+        FIELDTERMINATOR = '';'',
+        ROWTERMINATOR   = ''0x0d0a'',
+        TABLOCK,
+        MAXERRORS       = 1
+      );';
+    EXEC sp_executesql @sql;
+
+    /*PRINT 'Filas cargadas en staging: ' 
+          + CAST((SELECT COUNT(*) FROM #StagingPiletaActividad) AS VARCHAR(10));*/
+
+    ---------------------------
+    -- 3) PROCESSED
+    ---------------------------
     IF OBJECT_ID('tempdb..#ProcessedPiletaActividad') IS NOT NULL
         DROP TABLE #ProcessedPiletaActividad;
 
     CREATE TABLE #ProcessedPiletaActividad (
-        idActividad INT PRIMARY KEY,
-        tarifaSocioPorDiaAdulto DECIMAL(10,2),
-        tarifaSocioPorTemporadaAdulto DECIMAL(10,2),
-        tarifaSocioPorMesAdulto DECIMAL(10,2),
-        tarifaSocioPorDiaMenor DECIMAL(10,2),
-        tarifaSocioPorTemporadaMenor DECIMAL(10,2),
-        tarifaSocioPorMesMenor DECIMAL(10,2),
-        tarifaInvitadoPorDiaAdulto DECIMAL(10,2),
+        idActividad                    INT          PRIMARY KEY,
+        tarifaSocioPorDiaAdulto        DECIMAL(10,2),
+        tarifaSocioPorTemporadaAdulto  DECIMAL(10,2),
+        tarifaSocioPorMesAdulto        DECIMAL(10,2),
+        tarifaSocioPorDiaMenor         DECIMAL(10,2),
+        tarifaSocioPorTemporadaMenor   DECIMAL(10,2),
+        tarifaSocioPorMesMenor         DECIMAL(10,2),
+        tarifaInvitadoPorDiaAdulto     DECIMAL(10,2),
         tarifaInvitadoPorTemporadaAdulto DECIMAL(10,2),
-        tarifaInvitadoPorMesAdulto DECIMAL(10,2),
-        tarifaInvitadoPorDiaMenor DECIMAL(10,2),
+        tarifaInvitadoPorMesAdulto     DECIMAL(10,2),
+        tarifaInvitadoPorDiaMenor      DECIMAL(10,2),
         tarifaInvitadoPorTemporadaMenor DECIMAL(10,2),
-        tarifaInvitadoPorMesMenor DECIMAL(10,2),
-        horaAperturaActividad TIME,
-        horaCierreActividad TIME,
-        vigenciaHasta DATE
+        tarifaInvitadoPorMesMenor      DECIMAL(10,2),
+        horaAperturaActividad          TIME,
+        horaCierreActividad            TIME,
+        vigenciaHasta                  DATE
     );
 
-    BEGIN TRY
-        -- Paso 3: Cargar datos del CSV a la tabla de staging
-        SET @DynamicSql = N'BULK INSERT #StagingPiletaActividad
-                             FROM ''' + @FilePath + N'''
-                             WITH
-                             (
-                                 FIRSTROW = 2,
-                                 FIELDTERMINATOR = '';'',
-                                 ROWTERMINATOR = ''0x0d0a'', -- CRLF para Windows
-                                 TABLOCK
-                             );';
-        
-        EXEC sp_executesql @DynamicSql;
-        PRINT 'BULK INSERT completado. Filas cargadas en #StagingPiletaActividad: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
+    ---------------------------
+    -- 4) PIVOT / AGREGACIÓN
+    ---------------------------
+    INSERT INTO #ProcessedPiletaActividad
+    SELECT
+      1 AS idActividad,
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor del dia Socios Adultos%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor de temporada Socios Adultos%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor del mes Socios Adultos%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor del dia Socios Menores de 12 años%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor de temporada Socios Menores de 12 años%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor del mes Socios Menores de 12 años%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor del dia Invitados Adultos%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor de temporada Invitados Adultos%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor del mes Invitados Adultos%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor del dia Invitados Menores de 12 años%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor de temporada Invitados Menores de 12 años%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      ISNULL(MAX(CASE 
+        WHEN DescripcionCsv LIKE 'Valor del mes Invitados Menores de 12 años%' 
+        THEN TRY_CAST(REPLACE(ValorCsv,',','.') AS DECIMAL(10,2)) 
+      END), @DefaultTariffValue),
+      @DefaultApertura,
+      @DefaultCierre,
+      ISNULL(
+        MAX(TRY_CONVERT(DATE, VigenciaHastaCsv, 103)),
+        @DefaultVigenciaHasta
+      )
+    FROM #StagingPiletaActividad;
 
-        -- Paso 4: Procesar y pivotar los datos de la tabla de staging a #ProcessedPiletaActividad
-        INSERT INTO #ProcessedPiletaActividad (
-            idActividad,
-            tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
-            tarifaSocioPorDiaMenor, tarifaSocioPorTemporadaMenor, tarifaSocioPorMesMenor,
-            tarifaInvitadoPorDiaAdulto, tarifaInvitadoPorTemporadaAdulto, tarifaInvitadoPorMesAdulto,
-            tarifaInvitadoPorDiaMenor, tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorMesMenor,
-            horaAperturaActividad, horaCierreActividad, vigenciaHasta
-        )
-        SELECT
-            1 AS idActividad, -- Siempre será 1 para este registro de configuración
-            -- Tarifas Socio Adulto
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor del dia' AND ParsedData.TipoPersona = 'Socios Adultos' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor de temporada' AND ParsedData.TipoPersona = 'Socios Adultos' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor del mes' AND ParsedData.TipoPersona = 'Socios Adultos' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            
-            -- Tarifas Socio Menor
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor del dia' AND ParsedData.TipoPersona = 'Socios Menores de 12 años' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor de temporada' AND ParsedData.TipoPersona = 'Socios Menores de 12 años' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor del mes' AND ParsedData.TipoPersona = 'Socios Menores de 12 años' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
+    ---------------------------
+    -- 5) SINCRONIZAR CON ACTIVIDADPILETA
+    ---------------------------
+    IF EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = 1)
+    BEGIN
+      UPDATE t
+      SET
+        t.tarifaSocioPorDiaAdulto        = p.tarifaSocioPorDiaAdulto,
+        t.tarifaSocioPorTemporadaAdulto  = p.tarifaSocioPorTemporadaAdulto,
+        t.tarifaSocioPorMesAdulto        = p.tarifaSocioPorMesAdulto,
+        t.tarifaSocioPorDiaMenor         = p.tarifaSocioPorDiaMenor,
+        t.tarifaSocioPorTemporadaMenor   = p.tarifaSocioPorTemporadaMenor,
+        t.tarifaSocioPorMesMenor         = p.tarifaSocioPorMesMenor,
+        t.tarifaInvitadoPorDiaAdulto     = p.tarifaInvitadoPorDiaAdulto,
+        t.tarifaInvitadoPorTemporadaAdulto = p.tarifaInvitadoPorTemporadaAdulto,
+        t.tarifaInvitadoPorMesAdulto     = p.tarifaInvitadoPorMesAdulto,
+        t.tarifaInvitadoPorDiaMenor      = p.tarifaInvitadoPorDiaMenor,
+        t.tarifaInvitadoPorTemporadaMenor = p.tarifaInvitadoPorTemporadaMenor,
+        t.tarifaInvitadoPorMesMenor      = p.tarifaInvitadoPorMesMenor,
+        t.horaAperturaActividad          = p.horaAperturaActividad,
+        t.horaCierreActividad            = p.horaCierreActividad,
+        t.vigenciaHasta                  = p.vigenciaHasta
+      FROM actividades.actividadPileta AS t
+      JOIN #ProcessedPiletaActividad AS p ON t.idActividad = p.idActividad;
+    END
+    ELSE
+    BEGIN
+      SET IDENTITY_INSERT actividades.actividadPileta ON;
+      INSERT INTO actividades.actividadPileta
+      SELECT * FROM #ProcessedPiletaActividad;
+      SET IDENTITY_INSERT actividades.actividadPileta OFF;
+    END;
 
-            -- Tarifas Invitado Adulto
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor del dia' AND ParsedData.TipoPersona = 'Invitados Adultos' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor de temporada' AND ParsedData.TipoPersona = 'Invitados Adultos' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor del mes' AND ParsedData.TipoPersona = 'Invitados Adultos' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            
-            -- Tarifas Invitado Menor
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor del dia' AND ParsedData.TipoPersona = 'Invitados Menores de 12 años' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor de temporada' AND ParsedData.TipoPersona = 'Invitados Menores de 12 años' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            ISNULL(MAX(CASE WHEN ParsedData.TipoValor = 'Valor del mes' AND ParsedData.TipoPersona = 'Invitados Menores de 12 años' THEN ParsedData.ParsedTariff END), @DefaultTariffValue),
-            
-            -- Horarios y Vigencia
-            @DefaultApertura,
-            @DefaultCierre,
-            -- Tomar la vigencia del CSV, si es válida, de lo contrario usar el default
-            ISNULL(MAX(CASE WHEN ISDATE(ParsedData.VigenciaHastaCsv) = 1 THEN CONVERT(DATE, ParsedData.VigenciaHastaCsv, 103) ELSE NULL END), @DefaultVigenciaHasta)
-        FROM (
-            SELECT
-                sa.RowNum,
-                -- Extraer TipoValor (ej. 'Valor del dia', 'Valor de temporada', 'Valor del mes')
-                TRIM(SUBSTRING(sa.DescripcionCsv, 1, CHARINDEX(' ', sa.DescripcionCsv, CHARINDEX(' ', sa.DescripcionCsv) + 1) - 1)) AS TipoValor,
-                -- Extraer TipoPersona (ej. 'Socios Adultos', 'Menores de 12 años', 'Invitados Adultos')
-                TRIM(SUBSTRING(sa.DescripcionCsv, CHARINDEX(' ', sa.DescripcionCsv, CHARINDEX(' ', sa.DescripcionCsv) + 1) + 1, LEN(sa.DescripcionCsv))) AS TipoPersona,
-                -- Convertir ValorCsv a DECIMAL, manejando comas como puntos y valores vacíos
-                CASE WHEN ISNUMERIC(REPLACE(sa.ValorCsv, ',', '.')) = 1 
-                     THEN CAST(REPLACE(sa.ValorCsv, ',', '.') AS DECIMAL(10,2)) 
-                     ELSE NULL -- Usar NULL para que ISNULL en el MAX lo reemplace con @DefaultTariffValue
-                END AS ParsedTariff,
-                sa.VigenciaHastaCsv
-            FROM #StagingPiletaActividad sa
-        ) AS ParsedData
-        GROUP BY (); -- Agrupar por nada para obtener una sola fila con los valores agregados
+    ---------------------------
+    -- 6) LIMPIEZA
+    ---------------------------
+    DROP TABLE #StagingPiletaActividad;
+    DROP TABLE #ProcessedPiletaActividad;
 
-        -- Paso 5: Sincronizar los datos procesados con la tabla final actividades.actividadPileta
-        IF EXISTS (SELECT 1 FROM actividades.actividadPileta WHERE idActividad = 1)
-        BEGIN
-            -- Si el registro existe, actualizarlo
-            UPDATE Target
-            SET
-                Target.tarifaSocioPorDiaAdulto = Source.tarifaSocioPorDiaAdulto,
-                Target.tarifaSocioPorTemporadaAdulto = Source.tarifaSocioPorTemporadaAdulto,
-                Target.tarifaSocioPorMesAdulto = Source.tarifaSocioPorMesAdulto,
-                Target.tarifaSocioPorDiaMenor = Source.tarifaSocioPorDiaMenor,
-                Target.tarifaSocioPorTemporadaMenor = Source.tarifaSocioPorTemporadaMenor,
-                Target.tarifaSocioPorMesMenor = Source.tarifaSocioPorMesMenor,
-                Target.tarifaInvitadoPorDiaAdulto = Source.tarifaInvitadoPorDiaAdulto,
-                Target.tarifaInvitadoPorTemporadaAdulto = Source.tarifaInvitadoPorTemporadaAdulto,
-                Target.tarifaInvitadoPorMesAdulto = Source.tarifaInvitadoPorMesAdulto,
-                Target.tarifaInvitadoPorDiaMenor = Source.tarifaInvitadoPorDiaMenor,
-                Target.tarifaInvitadoPorTemporadaMenor = Source.tarifaInvitadoPorTemporadaMenor,
-                Target.tarifaInvitadoPorMesMenor = Source.tarifaInvitadoPorMesMenor,
-                Target.horaAperturaActividad = Source.horaAperturaActividad,
-                Target.horaCierreActividad = Source.horaCierreActividad,
-                Target.vigenciaHasta = Source.vigenciaHasta
-            FROM actividades.actividadPileta AS Target
-            INNER JOIN #ProcessedPiletaActividad AS Source ON Target.idActividad = Source.idActividad;
-            PRINT 'Registro de actividad de pileta actualizado con éxito!';
-        END
-        ELSE
-        BEGIN
-            -- Si el registro no existe, insertarlo
-            SET IDENTITY_INSERT actividades.actividadPileta ON; -- Habilitar para insertar el ID explícitamente
-            INSERT INTO actividades.actividadPileta (
-                idActividad, tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
-                tarifaSocioPorDiaMenor, tarifaSocioPorTemporadaMenor, tarifaSocioPorMesMenor,
-                tarifaInvitadoPorDiaAdulto, tarifaInvitadoPorTemporadaAdulto, tarifaInvitadoPorMesAdulto,
-                tarifaInvitadoPorDiaMenor, tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorMesMenor,
-                horaAperturaActividad, horaCierreActividad, vigenciaHasta
-            )
-            SELECT
-                idActividad, tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
-                tarifaSocioPorDiaMenor, tarifaSocioPorTemporadaMenor, tarifaSocioPorMesMenor,
-                tarifaInvitadoPorDiaAdulto, tarifaInvitadoPorTemporadaAdulto, tarifaInvitadoPorMesAdulto,
-                tarifaInvitadoPorDiaMenor, tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorMesMenor,
-                horaAperturaActividad, horaCierreActividad, vigenciaHasta
-            FROM #ProcessedPiletaActividad;
-            SET IDENTITY_INSERT actividades.actividadPileta OFF; -- Deshabilitar después de la inserción
-            PRINT 'Registro de actividad de pileta insertado con éxito!';
-        END;
-        PRINT 'Tarifas y horarios de actividad de pileta importados/actualizados con éxito!';
-    END TRY
-    BEGIN CATCH
-        -- Asegurar que IDENTITY_INSERT se desactive en caso de error
-        IF (SELECT OBJECTPROPERTY(OBJECT_ID('actividades.actividadPileta'), 'TableHasIdentity')) = 1
-           AND (SELECT COLUMNPROPERTY(OBJECT_ID('actividades.actividadPileta'), 'idActividad', 'IsIdentity')) = 1
-           AND EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('actividades.actividadPileta') AND is_identity = 1 AND is_computed = 0 AND OBJECTPROPERTY(object_id, 'TableHasIdentity') = 1)
-        BEGIN
-            SET IDENTITY_INSERT actividades.actividadPileta OFF;
-        END;
-        DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();
-        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
-        DECLARE @ErrorState INT = ERROR_STATE();
-        RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);
-    END CATCH;
-
-    -- Paso 6: Limpiar tablas temporales
-    IF OBJECT_ID('tempdb..#StagingPiletaActividad') IS NOT NULL
-        DROP TABLE #StagingPiletaActividad;
-    IF OBJECT_ID('tempdb..#ProcessedPiletaActividad') IS NOT NULL
-        DROP TABLE #ProcessedPiletaActividad;
+    PRINT 'Importación de tarifas de pileta completada correctamente.';
 END;
 GO
 
+
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarDeportesPileta
-    @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividadesPileta.csv';
+    @FilePath = 'C:\Importar\dataImport\tarifasActividadesPileta.csv';
 GO
 
 SELECT -- FORMAT(valor, 'C', 'es-AR') para mostrar los valores como moneda local de Argentina
@@ -632,9 +648,10 @@ SELECT -- FORMAT(valor, 'C', 'es-AR') para mostrar los valores como moneda local
     horaAperturaActividad,
     horaCierreActividad,
     vigenciaHasta
--- SELECT * 
+--SELECT * 
 FROM actividades.actividadPileta;
 GO
+
 
 -- ************************************************************************************************
 -- Procedimiento: socios.importarGrupoFamiliar (4° ejecutar - A MI NO ME FUNCIONA)

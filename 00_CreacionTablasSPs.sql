@@ -108,8 +108,8 @@ CREATE TABLE itinerarios.datosSUM (
 	idSitio INT PRIMARY KEY IDENTITY(1,1),
 	tarifaHorariaSocio DECIMAL(10, 2) CHECK (tarifaHorariaSocio > 0) NOT NULL,
 	tarifaHorariaInvitado DECIMAL(10, 2) CHECK (tarifaHorariaInvitado > 0) NOT NULL,
-	horaMinimaReserva TIME NOT NULL,
-	horaMaximaReserva TIME NOT NULL
+	horaMinimaReserva INT NOT NULL,
+	horaMaximaReserva INT NOT NULL
 );
 GO
 
@@ -2736,8 +2736,8 @@ GO
 CREATE OR ALTER PROCEDURE itinerarios.insertarDatosSUM
     @tarifaHorariaSocio     DECIMAL(10, 2),
     @tarifaHorariaInvitado  DECIMAL(10, 2),
-    @horaMinimaReserva      TIME,
-    @horaMaximaReserva      TIME
+    @horaMinimaReserva      INT,
+    @horaMaximaReserva      INT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2762,8 +2762,8 @@ BEGIN
         INSERT INTO itinerarios.datosSUM (
             tarifaHorariaSocio,
             tarifaHorariaInvitado,
-			horaMinReserva,
-            horaMaxReserva
+			horaMinimaReserva,
+            horaMaximaReserva
         ) VALUES (
             @tarifaHorariaSocio,
             @tarifaHorariaInvitado,
