@@ -551,6 +551,8 @@ CREATE OR ALTER PROCEDURE socios.registrarNuevoSocio
   @direccion              VARCHAR(50)    = NULL,
   @deportePreferido       INT            = NULL,
   @rolAsignar             INT            = NULL,
+  @grupoFamiliar          INT            = NULL,
+  @rolGrupoFamiliar       VARCHAR(15)    = NULL,  -- 'Tutor' o 'Menor'
   @newIdSocio             INT            OUTPUT
 AS
 BEGIN
@@ -569,7 +571,9 @@ BEGIN
 
   BEGIN TRANSACTION;
   BEGIN TRY
-    -- 1) IngresoSocio
+    ----------------------------------------------------
+    -- 1) ingresoSocio
+    ----------------------------------------------------
     INSERT INTO socios.ingresoSocio(
       fechaIngreso, primerUsuario, primerContrasenia, tipoCategoriaSocio
     ) VALUES (
@@ -577,7 +581,9 @@ BEGIN
     );
     SET @newIdSocio = SCOPE_IDENTITY();
 
-    -- 2) Resolver categoría vigente
+    ----------------------------------------------------
+    -- 2) Resolvemos categoría vigente
+    ----------------------------------------------------
     DECLARE @categoriaSocioId INT;
     SELECT @categoriaSocioId = idCategoria
       FROM socios.categoriaMembresiaSocio
@@ -587,7 +593,9 @@ BEGIN
     IF @categoriaSocioId IS NULL
       THROW 50014, 'Categoría no encontrada, inactiva o vencida.', 1;
 
-    -- 3) Socio
+    ----------------------------------------------------
+    -- 3) socio
+    ----------------------------------------------------
     INSERT INTO socios.socio(
       idSocio, categoriaSocio,
       nombre, apellido, dni, email,
@@ -602,7 +610,9 @@ BEGIN
       @usuario, @contrasenia, @direccion
     );
 
-    -- 4) EstadoMembresiaSocio
+    ----------------------------------------------------
+    -- 4) estadoMembresiaSocio
+    ----------------------------------------------------
     SET IDENTITY_INSERT socios.estadoMembresiaSocio ON;
     INSERT INTO socios.estadoMembresiaSocio(
       idSocio, tipoCategoriaSocio,
@@ -613,68 +623,107 @@ BEGIN
     );
     SET IDENTITY_INSERT socios.estadoMembresiaSocio OFF;
 
-    -- 5) FacturaActiva + Emitir
+    ----------------------------------------------------
+    -- 5) facturaActiva + emitirFactura
+    ----------------------------------------------------
     DECLARE @newFacturaId INT;
     EXEC pagos.insertarFacturaActiva
       @idSocio        = @newIdSocio,
       @categoriaSocio = @categoriaSocioId,
       @newFacturaId   = @newFacturaId OUTPUT;
+
     DECLARE @domicilioFinal VARCHAR(50) = ISNULL(@direccion,'-');
+
     EXEC pagos.emitirFactura
       @idFactura      = @newFacturaId,
-      @cuilDeudor     = @cuil,                -- uso correcto de @cuil
+      @cuilDeudor     = @cuil,
       @domicilio      = @domicilioFinal,
-      @modalidadCobro = 'Contado',
-      @importeBruto   = 0.00;
+      @modalidadCobro = 'Contado';
 
-     ----------------------------------------------------------------
-    -- 6) Insertar en cuerpoFactura: primero la membresía
-    ----------------------------------------------------------------
-    DECLARE 
-      @costoMembresia DECIMAL(10,2),
-      @descripcionMemb VARCHAR(50);
+    ----------------------------------------------------
+    -- 6) cuerpoFactura: membresía
+    ----------------------------------------------------
+    DECLARE @costoMembresia DECIMAL(10,2),
+            @descrMemb      VARCHAR(50);
 
     SELECT 
-      @costoMembresia  = costoMembresia,
-      @descripcionMemb = tipo
+      @costoMembresia = costoMembresia,
+      @descrMemb      = tipo
     FROM socios.categoriaMembresiaSocio
     WHERE idCategoria = @categoriaSocioId;
 
     EXEC pagos.insertarCuerpoFactura
-      @idFactura        = @newFacturaId,
-      @tipoItem         = 'Membresía',
-      @descripcionItem  = @descripcionMemb,
-      @importeItem      = @costoMembresia;
+      @idFactura       = @newFacturaId,
+      @tipoItem        = 'Membresía',
+      @descripcionItem = @descrMemb,
+      @importeItem     = @costoMembresia;
 
-    ----------------------------------------------------------------
-    -- 7) Insertar en cuerpoFactura: deporte (si aplicó)
-    ----------------------------------------------------------------
+    ----------------------------------------------------
+    -- 7) deporteActivo + cuerpoFactura: deporte
+    ----------------------------------------------------
     IF @deportePreferido IS NOT NULL
     BEGIN
       EXEC actividades.insertarDeporteActivo
         @idSocio   = @newIdSocio,
         @idDeporte = @deportePreferido;
 
-      DECLARE @descr NVARCHAR(50), @costo DECIMAL(10,2);
+      DECLARE @descrDep NVARCHAR(50), @costoDep DECIMAL(10,2);
       SELECT 
-        @descr = descripcion,
-        @costo = costoPorMes
+        @descrDep = descripcion,
+        @costoDep = costoPorMes
       FROM actividades.deporteDisponible
       WHERE idDeporte = @deportePreferido
         AND vigenciaHasta >= CAST(GETDATE() AS DATE);
 
       EXEC pagos.insertarCuerpoFactura
-        @idFactura        = @newFacturaId,
-        @tipoItem         = 'Deporte',
-        @descripcionItem  = @descr,
-        @importeItem      = @costo;
+        @idFactura       = @newFacturaId,
+        @tipoItem        = 'Deporte',
+        @descripcionItem = @descrDep,
+        @importeItem     = @costoDep;
     END
 
-    -- 8) RolVigente
+    ----------------------------------------------------
+    -- 8) rolVigente
+    ----------------------------------------------------
     IF @rolAsignar IS NOT NULL
       EXEC socios.insertarRolVigente
         @idRol   = @rolAsignar,
         @idSocio = @newIdSocio;
+
+    ----------------------------------------------------
+    -- 9) grupoFamiliar
+    ----------------------------------------------------
+    IF @grupoFamiliar IS NOT NULL AND @rolGrupoFamiliar IS NOT NULL
+    BEGIN
+      DECLARE @idResponsable INT;
+
+      IF @rolGrupoFamiliar = 'Tutor'
+        SET @idResponsable = @newIdSocio;
+      ELSE IF @rolGrupoFamiliar = 'Menor'
+      BEGIN
+        -- buscamos el tutor existente en ese grupo
+        SELECT TOP 1 @idResponsable = idSocioResponsable
+          FROM socios.grupoFamiliar
+         WHERE idGrupoFamiliar = @grupoFamiliar
+           AND idSocioResponsable <> @newIdSocio;
+        IF @idResponsable IS NULL
+          THROW 50020, 'No se encontró tutor para ese grupo.', 1;
+      END
+      -- insertamos al nuevo miembro
+      EXEC socios.insertarGrupoFamiliar
+        @idGrupoFamiliar              = @grupoFamiliar,
+        @idSocioResponsable           = @idResponsable,
+        @nombre                       = @nombre,
+        @apellido                     = @apellido,
+        @dni                          = @dni,
+        @emailPersonal                = @email,
+        @fechaNacimiento              = @fechaNacimiento,
+        @telefonoContacto             = @telefonoContacto,
+        @telefonoContactoEmergencia   = @telefonoEmergencia,
+        @nombreObraSocial             = @nombreObraSocial,
+        @nroSocioObraSocial           = @nroSocioObraSocial,
+        @telefonoObraSocialEmergencia = @telefonoEmergencia;
+    END
 
     COMMIT TRANSACTION;
     PRINT 'Registro exitoso. Socio ID=' + CAST(@newIdSocio AS VARCHAR(10));
@@ -685,6 +734,10 @@ BEGIN
   END CATCH
 END;
 GO
+
+SELECT * FROM pagos.tarjetaDisponible
+
+SELECT * FROM pagos.tarjetaEnUso
 
 CREATE OR ALTER PROCEDURE socios.actualizarSocio
   @idSocio                INT,
@@ -1001,7 +1054,7 @@ CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliar
   @telefonoContactoEmergencia        VARCHAR(20)    = NULL,
   @nombreObraSocial                  VARCHAR(50)    = NULL,
   @nroSocioObraSocial                VARCHAR(50)    = NULL,
-  @telefonoObraSocialEmergencia      VARCHAR(14)    = NULL
+  @telefonoObraSocialEmergencia      VARCHAR(50)    = NULL
 AS
 BEGIN
   SET NOCOUNT ON;

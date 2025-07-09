@@ -666,3 +666,154 @@ GO
 
 -- VER DATOS CARGADOS
 SELECT * FROM socios.estadoMembresiaSocio;
+
+USE Com2900G03;
+GO
+
+-- 0) Limpio todo en orden padre-hijo
+DELETE FROM pagos.cuerpoFactura;
+DELETE FROM pagos.facturaEmitida;
+DELETE FROM pagos.facturaActiva;
+DELETE FROM actividades.deporteActivo;
+DELETE FROM socios.rolVigente;
+DELETE FROM actividades.deporteDisponible;
+DELETE FROM pagos.cobroFactura;
+DELETE FROM pagos.reembolso;
+DELETE FROM descuentos.descuentoVigente;
+DELETE FROM socios.grupoFamiliar;
+DELETE FROM socios.estadoMembresiaSocio;
+DELETE FROM socios.socio;
+DELETE FROM socios.ingresoSocio;
+DELETE FROM socios.rolDisponible;
+DELETE FROM socios.categoriaMembresiaSocio;
+GO
+
+-- 1) Inserto categorías de membresía vigentes
+INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia, vigenciaHasta)
+VALUES
+  ('Cadete',  500.00, DATEADD(YEAR,1,GETDATE())),
+  ('Mayor',  1000.00, DATEADD(YEAR,1,GETDATE())),
+  ('Menor',   300.00, DATEADD(YEAR,1,GETDATE()));
+GO
+
+-- 2) Inserto deportes vigentes
+INSERT INTO actividades.deporteDisponible (descripcion, tipo, costoPorMes, vigenciaHasta)
+VALUES
+  ('Natación', 'Pileta',  800.00, DATEADD(YEAR,1,GETDATE())),
+  ('Fútbol',   'Cancha', 600.00, DATEADD(YEAR,1,GETDATE()));
+GO
+
+-- 3) Inserto roles disponibles
+INSERT INTO socios.rolDisponible (idRol, descripcion)
+SELECT v.id, v.rolDesc
+FROM (VALUES
+  (1,'ADMIN'),
+  (2,'SOCIODEPOR'),
+  (3,'INVITADO')
+) AS v(id, rolDesc)
+WHERE NOT EXISTS(
+  SELECT 1 FROM socios.rolDisponible r 
+   WHERE r.idRol = v.id AND r.estadoRol = 1
+);
+GO
+
+-- 4) Prueba 1: Sin deporte ni grupo familiar
+DECLARE @new1 INT, @fecha1 DATE = GETDATE();
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso        = @fecha1,
+  @primerUsuario       = 'juan.perez',
+  @primerContrasenia   = 'Init1234',
+  @tipoCategoriaSocio  = 'Mayor',
+  @dni                 = '30111222',
+  @cuil                = '20-30111222-0',
+  @nombre              = 'Juan',
+  @apellido            = 'Pérez',
+  @email               = 'juan.perez@mail.com',
+  @fechaNacimiento     = '1985-05-15',
+  @telefonoContacto    = '1144455566',
+  @telefonoEmergencia  = '1199988877',
+  @nombreObraSocial    = 'OSDE',
+  @nroSocioObraSocial  = 'OS123',
+  @usuario             = 'juan.perez',
+  @contrasenia         = 'User1234',
+  @direccion           = 'Calle Falsa 123',
+  @deportePreferido    = NULL,
+  @rolAsignar          = 1,
+  @grupoFamiliar       = NULL,
+  @rolGrupoFamiliar    = NULL,
+  @newIdSocio          = @new1 OUTPUT;
+PRINT '--> Nuevo Socio 1: ' + CAST(@new1 AS VARCHAR(10));
+GO
+
+-- 5) Prueba 2: Con deporte “Natación” y rol, sin grupo familiar
+DECLARE @new2 INT, @fecha2 DATE = GETDATE(), @depNatacion VARCHAR(20)=(SELECT TOP 1 idDeporte FROM actividades.deporteDisponible WHERE descripcion = 'Natación');
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso        = @fecha2,
+  @primerUsuario       = 'maria.gomez',
+  @primerContrasenia   = 'Init5678',
+  @tipoCategoriaSocio  = 'Cadete',
+  @dni                 = '30222333',
+  @cuil                = '23-30222333-5',  -- aquí sí incluimos @cuil
+  @nombre              = 'María',
+  @apellido            = 'Gómez',
+  @email               = 'maria.gomez@mail.com',
+  @fechaNacimiento     = '2000-03-22',
+  @telefonoContacto    = '1166677788',
+  @telefonoEmergencia  = '1199911122',
+  @nombreObraSocial    = 'Galeno',
+  @nroSocioObraSocial  = 'GA456',
+  @usuario             = 'maria.gomez',
+  @contrasenia         = 'User5678',
+  @direccion           = 'Av. Siempre Viva 742',
+  @deportePreferido = @depNatacion,    
+  @rolAsignar          = 2,
+  @grupoFamiliar       = NULL,
+  @rolGrupoFamiliar    = NULL,
+  @newIdSocio          = @new2 OUTPUT;
+PRINT '--> Nuevo Socio 2: ' + CAST(@new2 AS VARCHAR(10));
+
+
+-- 6) Creo un grupo 100 con María como Tutor
+INSERT INTO socios.grupoFamiliar (idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni)
+VALUES (100, @new2, 'María', 'Gómez', '30222333');
+GO
+
+-- 7) Prueba 3: Hijo en el grupo 100
+DECLARE @new3 INT, @fecha3 DATE = GETDATE();
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso        = @fecha3,
+  @primerUsuario       = 'pedro.gomez',
+  @primerContrasenia   = 'Init9999',
+  @tipoCategoriaSocio  = 'Menor',
+  @dni                 = '30333444',
+  @cuil                = '20-30333444-1',
+  @nombre              = 'Pedro',
+  @apellido            = 'Gómez',
+  @email               = 'pedro.gomez@mail.com',
+  @fechaNacimiento     = '2010-08-12',
+  @telefonoContacto    = '1177788990',
+  @telefonoEmergencia  = '1199933344',
+  @nombreObraSocial    = 'OSDE',
+  @nroSocioObraSocial  = 'OS789',
+  @usuario             = 'pedro.gomez',
+  @contrasenia         = 'User9999',
+  @direccion           = 'Av. Siempre Viva 742',
+  @deportePreferido    = NULL,
+  @rolAsignar          = 3,
+  @grupoFamiliar       = 100,
+  @rolGrupoFamiliar    = 'Menor',
+  @newIdSocio          = @new3 OUTPUT;
+PRINT '--> Nuevo Socio 3 (hijo): ' + CAST(@new3 AS VARCHAR(10));
+GO
+
+-- 8) Verificación final
+SELECT * FROM socios.socio;
+SELECT * FROM socios.estadoMembresiaSocio;
+SELECT * FROM pagos.facturaActiva;
+SELECT * FROM pagos.facturaEmitida;
+SELECT * FROM pagos.cuerpoFactura;
+SELECT * FROM actividades.deporteActivo;
+SELECT * FROM socios.rolVigente;
+SELECT * FROM socios.grupoFamiliar;
+SELECT * FROM descuentos.descuentoVigente;
+GO

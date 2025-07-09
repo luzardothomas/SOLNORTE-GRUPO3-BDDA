@@ -186,7 +186,7 @@ USE Com2900G03;
 GO
 
 EXEC socios.importarGrupoFamiliar
-  @FilePath = N'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\grupoFamiliar.csv';
+  @FilePath = N'C:\Importar\dataImport\grupoFamiliar.csv';
 GO
 
 SELECT * 
@@ -237,6 +237,9 @@ FROM sys.server_role_members m
 JOIN sys.server_principals rp ON m.role_principal_id = rp.principal_id
 JOIN sys.server_principals mp ON m.member_principal_id = mp.principal_id
 WHERE rp.name = 'bulkadmin';*/ 
+
+use Com2900G03
+go
 
 -- VER DATOS CARGADOS
 SELECT * FROM socios.grupoFamiliar;
@@ -330,7 +333,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC socios.importarCategoriasSocio 
-	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasCategoriaSocio.csv';
+	@FilePath = 'C:\Importar\dataImport\tarifasCategoriaSocio.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -408,7 +411,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarDeportesDisponibles 
-	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividades.csv';
+	@FilePath = 'C:\Importar\dataImport\tarifasActividades.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -631,6 +634,7 @@ END;
 GO
 
 
+
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarDeportesPileta
     @FilePath = 'C:\Importar\dataImport\tarifasActividadesPileta.csv';
@@ -815,7 +819,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC pagos.importarPagosCuotas
-	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\pagoCuotas.csv';
+	@FilePath = 'C:\Importar\dataImport\pagoCuotas.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -861,8 +865,8 @@ BEGIN
         EXEC sp_executesql @consultaSqlDinamica;
         PRINT 'BULK INSERT completado. Filas cargadas en #TablaDeCargaTemporal: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
         -- Depuración: Mostrar algunas filas de la tabla temporal
-        -- PRINT 'Top 10 filas de #TablaDeCargaTemporal:';
-        -- SELECT TOP 10 * FROM #TablaDeCargaTemporal;
+        PRINT 'Top 10 filas de #TablaDeCargaTemporal:';
+        SELECT TOP 10 * FROM #TablaDeCargaTemporal;
 
         -- MERGE para insertar/actualizar datos en actividades.presentismoActividadSocio
         MERGE actividades.presentismoActividadSocio AS TablaDestino
@@ -909,7 +913,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarPresentismoActividadSocio
-    @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\presentismoActividades.csv';
+    @FilePath = 'C:\Importar\dataImport\presentismo_actividades.csv';
 GO
 
 -- VER DATOS CARGADOS
