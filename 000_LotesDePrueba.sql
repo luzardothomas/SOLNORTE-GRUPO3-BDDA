@@ -10,6 +10,10 @@
 USE Com2900G03;
 GO
 
+-- ********************************************************************************
+-- CARGAR Y DEMOSTRACIÓN DEL FUNCIONAMIENTO PARA CARGA DE SOCIOS (YA OBSOLETO)
+-- ********************************************************************************
+/*
 -- 1) Limpiar datos de prueba
 DELETE FROM socios.rolVigente			WHERE idSocio > 1;
 DELETE FROM pagos.cuerpoFactura			WHERE idFactura > 1;
@@ -214,6 +218,155 @@ SELECT idSocio, categoriaSocio, nombre, apellido    FROM socios.socio				WHERE i
 SELECT *                                            FROM pagos.cuerpoFactura		WHERE idFactura > 0;
 SELECT *                                            FROM actividades.deporteActivo;
 SELECT *                                            FROM socios.rolVigente;
+GO */
+
+-- ****************************************************
+-- NUEVAS PRUEBAS CON MAS DATOS REFERIDOS A LOS SOCIOS
+-- ****************************************************
+
+-- 0) Limpiar datos en orden (hijos antes que padres)
+DELETE FROM pagos.cuerpoFactura;
+DELETE FROM pagos.facturaEmitida;
+DELETE FROM pagos.facturaActiva;
+DELETE FROM actividades.deporteActivo;
+DELETE FROM socios.rolVigente;
+DELETE FROM pagos.cobroFactura;
+DELETE FROM pagos.reembolso;
+DELETE FROM descuentos.descuentoVigente;
+DELETE FROM socios.grupoFamiliarActivo;
+DELETE FROM socios.grupoFamiliar;
+DELETE FROM socios.estadoMembresiaSocio;
+DELETE FROM socios.socio;
+DELETE FROM socios.ingresoSocio;
+DELETE FROM socios.rolDisponible;
+DELETE FROM socios.categoriaMembresiaSocio;
+GO
+
+-- 1) Semilla: categorías de membresía vigentes
+INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia, vigenciaHasta)
+VALUES
+  ('Cadete',  500.00, DATEADD(YEAR,1,GETDATE())),
+  ('Mayor',  1000.00, DATEADD(YEAR,1,GETDATE())),
+  ('Menor',   300.00, DATEADD(YEAR,1,GETDATE()));
+GO
+
+-- 2) Semilla: deportes disponibles
+INSERT INTO actividades.deporteDisponible (descripcion, tipo, costoPorMes, vigenciaHasta)
+VALUES
+  ('Natación', 'Pileta',  800.00, DATEADD(YEAR,1,GETDATE())),
+  ('Fútbol',   'Cancha', 600.00, DATEADD(YEAR,1,GETDATE()));
+GO
+
+-- 3) Semilla: roles disponibles
+INSERT INTO socios.rolDisponible (idRol, descripcion)
+VALUES 
+  (1, 'ADMIN'),
+  (2, 'SOCIODEPOR'),
+  (3, 'INVITADO');
+GO
+
+-- =========================================
+-- 4) Prueba 1: Socio sin deporte ni grupo
+-- =========================================
+DECLARE @new1 INT, @fechaIngreso DATE=GETDATE();
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso        = @fechaIngreso,
+  @primerUsuario       = 'juan.perez',
+  @primerContrasenia   = 'Init1234',
+  @tipoCategoriaSocio  = 'Mayor',
+  @dni                 = '30111222',
+  @cuil                = '27-30111222-5',
+  @nombre              = 'Juan',
+  @apellido            = 'Pérez',
+  @email               = 'juan.perez@mail.com',
+  @fechaNacimiento     = '1985-05-15',
+  @telefonoContacto    = '1144455566',
+  @telefonoEmergencia  = '1199988877',
+  @nombreObraSocial    = 'OSDE',
+  @nroSocioObraSocial  = 'OS123',
+  @usuario             = 'juan.perez',
+  @contrasenia         = 'User1234',
+  @direccion           = 'Calle Falsa 123',
+  @deportePreferido    = NULL,
+  @rolAsignar          = 1,
+  @grupoFamiliar       = NULL,
+  @rolGrupoFamiliar    = NULL,
+  @newIdSocio          = @new1 OUTPUT;
+PRINT '--> Socio 1 ID=' + CAST(@new1 AS VARCHAR(10));
+GO
+
+-- =====================================
+-- 5) Prueba 2: Socio Tutor crea grupo
+-- =====================================
+DECLARE @new2 INT, @deportePreferido VARCHAR(15)=(SELECT TOP 1 idDeporte FROM actividades.deporteDisponible WHERE descripcion='Natación'), @fechaIngreso DATE=GETDATE();
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso        = @fechaIngreso,
+  @primerUsuario       = 'maria.gomez',
+  @primerContrasenia   = 'Init5678',
+  @tipoCategoriaSocio  = 'Cadete',
+  @dni                 = '30222333',
+  @cuil                = '23-30222333-5',
+  @nombre              = 'María',
+  @apellido            = 'Gómez',
+  @email               = 'maria.gomez@mail.com',
+  @fechaNacimiento     = '2000-03-22',
+  @telefonoContacto    = '1166677788',
+  @telefonoEmergencia  = '1199911122',
+  @nombreObraSocial    = 'Galeno',
+  @nroSocioObraSocial  = 'GA456',
+  @usuario             = 'maria.gomez',
+  @contrasenia         = 'User5678',
+  @direccion           = 'Av. Siempre Viva 742',
+  @deportePreferido    = @deportePreferido,
+  @rolAsignar          = 2,
+  @grupoFamiliar       = 100,         -- Nuevo grupo
+  @rolGrupoFamiliar    = 'Tutor',
+  @newIdSocio          = @new2 OUTPUT;
+PRINT '--> Socio 2 (Tutor) ID=' + CAST(@new2 AS VARCHAR(10));
+GO
+
+-- =========================================
+-- 6) Prueba 3: Socio Menor se une al grupo
+-- =========================================
+DECLARE @new3 INT, @fechaIngreso DATE=GETDATE();
+EXEC socios.registrarNuevoSocio
+  @fechaIngreso        = @fechaIngreso,
+  @primerUsuario       = 'pedro.gomez',
+  @primerContrasenia   = 'Init9999',
+  @tipoCategoriaSocio  = 'Menor',
+  @dni                 = '30333444',
+  @cuil                = '20-30333444-1',
+  @nombre              = 'Pedro',
+  @apellido            = 'Gómez',
+  @email               = 'pedro.gomez@mail.com',
+  @fechaNacimiento     = '2010-08-12',
+  @telefonoContacto    = '1177788990',
+  @telefonoEmergencia  = '1199933344',
+  @nombreObraSocial    = 'OSDE',
+  @nroSocioObraSocial  = 'OS789',
+  @usuario             = 'pedro.gomez',
+  @contrasenia         = 'User9999',
+  @direccion           = 'Av. Siempre Viva 742',
+  @deportePreferido    = NULL,
+  @rolAsignar          = 3,
+  @grupoFamiliar       = 100,         -- Grupo creado por María
+  @rolGrupoFamiliar    = 'Menor',
+  @newIdSocio          = @new3 OUTPUT;
+PRINT '--> Socio 3 (Menor) ID=' + CAST(@new3 AS VARCHAR(10));
+GO
+
+-- ======================
+-- 7) Verificación final
+-- ======================
+SELECT * FROM socios.socio;
+SELECT * FROM socios.grupoFamiliar;
+SELECT * FROM socios.grupoFamiliarActivo;
+SELECT * FROM descuentos.descuentoVigente;
+SELECT * FROM actividades.deporteActivo;
+SELECT * FROM pagos.facturaActiva;
+SELECT * FROM pagos.facturaEmitida;
+SELECT * FROM pagos.cuerpoFactura;
+SELECT * FROM socios.rolVigente;
 GO
 
 -- ********************************************************************************
@@ -358,6 +511,7 @@ SELECT * FROM socios.socio ORDER BY idSocio;
 
 -- *****************************************************************************************************
 -- CARGAR DATOS EN DEPORTE ACTIVO Y MAS SOCIOS PARA LOS IMPORTS (actividades.presentismoActividadSocio)
+-- (6to. SP para el import) 
 -- *****************************************************************************************************
 
 DELETE FROM actividades.presentismoActividadSocio;
@@ -485,9 +639,84 @@ GO
 -- VER DATOS CARGADOS
 SELECT * FROM actividades.deporteActivo
 
--- ******************************************************************
--- CARGAR DATOS EN CUERPO FACTURA Y FACTURA ACTIVO PARA LOS REPORTES (reporte_ingresosPorActividadMensua)
--- ******************************************************************
+-- *************************************************************************************
+-- CARGAR DATOS EN ESTADO MEMBRESIA SOCIO PARA LOS REPORTES (reporte_morososRecurrente)
+-- (1er. reporte)
+-- *************************************************************************************
+
+-- Paso 1: Eliminar la tabla si existe para recrearla con otra estructura
+IF OBJECT_ID('socios.estadoMembresiaSocio', 'U') IS NOT NULL
+BEGIN
+    DROP TABLE socios.estadoMembresiaSocio;
+    PRINT 'Tabla socios.estadoMembresiaSocio eliminada para recreación.';
+END
+GO
+
+-- Paso 2: Recrear la tabla socios.estadoMembresiaSocio con otra estructura
+CREATE TABLE socios.estadoMembresiaSocio (
+    idSocio INT NOT NULL, -- Ya NO es IDENTITY
+    tipoCategoriaSocio VARCHAR(15) CHECK (tipoCategoriaSocio IN ('Cadete', 'Mayor', 'Menor')),
+    estadoMorosidadMembresia VARCHAR(22) NOT NULL CHECK (estadoMorosidadMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
+    fechaVencimientoMembresia DATE NOT NULL,
+    CONSTRAINT PK_estadoMembresiaSocio PRIMARY KEY (idSocio, fechaVencimientoMembresia),
+    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
+);
+GO
+
+-- Inserción de datos en socios.estadoMembresiaSocio
+INSERT INTO socios.estadoMembresiaSocio (idSocio, tipoCategoriaSocio, fechaVencimientoMembresia, estadoMorosidadMembresia) VALUES
+-- Socio 4001: Moroso recurrente (4 incumplimientos en 2024)
+(4001, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
+(4001, 'Mayor', '2024-02-29', 'Moroso-1er Vencimiento'),
+(4001, 'Mayor', '2024-03-31', 'Moroso-2do Vencimiento'),
+(4001, 'Mayor', '2024-04-30', 'Inactivo'),
+(4001, 'Mayor', '2024-05-31', 'Activo'),
+(4001, 'Mayor', '2024-06-30', 'Moroso-1er Vencimiento'),
+-- Socio 4002: Moroso recurrente (3 incumplimientos en 2024)
+(4002, 'Mayor', '2024-01-31', 'Activo'),
+(4002, 'Mayor', '2024-02-29', 'Moroso-1er Vencimiento'),
+(4002, 'Mayor', '2024-03-31', 'Moroso-1er Vencimiento'),
+(4002, 'Mayor', '2024-04-30', 'Moroso-2do Vencimiento'),
+(4002, 'Mayor', '2024-05-31', 'Activo'),
+-- Socio 4003: Moroso recurrente (4 incumplimientos en 2024)
+(4003, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
+(4003, 'Mayor', '2024-02-29', 'Moroso-2do Vencimiento'),
+(4003, 'Mayor', '2024-03-31', 'Inactivo'),
+(4003, 'Mayor', '2024-04-30', 'Moroso-1er Vencimiento'),
+(4003, 'Mayor', '2024-05-31', 'Activo'),
+-- Socio 4004: Solo 2 incumplimientos (no aparecerá en el reporte con >2)
+(4004, 'Mayor', '2024-01-31', 'Activo'),
+(4004, 'Mayor', '2024-02-29', 'Activo'),
+(4004, 'Mayor', '2024-03-31', 'Moroso-1er Vencimiento'),
+(4004, 'Mayor', '2024-04-30', 'Moroso-2do Vencimiento'),
+(4004, 'Mayor', '2024-05-31', 'Activo'),
+-- Socio 4005: Sin incumplimientos en 2024
+(4005, 'Mayor', '2024-01-31', 'Activo'),
+(4005, 'Mayor', '2024-02-29', 'Activo'),
+(4005, 'Mayor', '2024-03-31', 'Activo'),
+(4005, 'Mayor', '2024-04-30', 'Activo'),
+(4005, 'Mayor', '2024-05-31', 'Activo'),
+-- Socio 4006: Moroso recurrente (3 incumplimientos en 2024, mezclado con 2025)
+(4006, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
+(4006, 'Mayor', '2024-02-29', 'Activo'),
+(4006, 'Mayor', '2024-03-31', 'Moroso-2do Vencimiento'),
+(4006, 'Mayor', '2024-04-30', 'Activo'),
+(4006, 'Mayor', '2024-05-31', 'Inactivo'),
+(4006, 'Mayor', '2025-01-31', 'Moroso-1er Vencimiento'),
+-- Socio 4007: Moroso recurrente (3 incumplimientos en 2025)
+(4007, 'Mayor', '2025-01-31', 'Moroso-1er Vencimiento'),
+(4007, 'Mayor', '2025-02-28', 'Moroso-1er Vencimiento'),
+(4007, 'Mayor', '2025-03-31', 'Moroso-2do Vencimiento'),
+(4007, 'Mayor', '2025-04-30', 'Activo');
+GO
+
+-- VER DATOS CARGADOS
+SELECT * FROM socios.estadoMembresiaSocio;
+
+-- *******************************************************************************************************
+-- CARGAR DATOS EN CUERPO FACTURA Y FACTURA ACTIVO PARA LOS REPORTES (reporte_ingresosPorActividadMensual)
+-- (2do. reporte)
+-- *******************************************************************************************************
 
 DELETE FROM pagos.cuerpoFactura;
 DBCC CHECKIDENT ('pagos.cuerpoFactura', RESEED, 0);
@@ -594,220 +823,145 @@ GO
 SELECT * FROM pagos.cuerpoFactura;
 SELECT * FROM pagos.facturaActiva;
 
--- ******************************************************************
--- CARGAR DATOS EN ESTADO MEMBRESIA SOCIO PARA LOS REPORTES (reporte_morososRecurrente)
--- ******************************************************************
+-- ***************************************************
+-- JUEGO DE PRUEBAS PARA LA TABLA pagos.cuerpoFactura
+-- ***************************************************
 
--- Paso 1: Eliminar la tabla si existe para recrearla con otra estructura
-IF OBJECT_ID('socios.estadoMembresiaSocio', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE socios.estadoMembresiaSocio;
-    PRINT 'Tabla socios.estadoMembresiaSocio eliminada para recreación.';
-END
-GO
+DECLARE @idSocio1 INT = 4001; -- Hay que haber cargado la tabla socios.socio antes (en este mismo .sql)
+DECLARE @idSocio2 INT = 4002;
+DECLARE @idSocio3 INT = 4003;
+DECLARE @categoriaSocio1 INT = 1;
+DECLARE @facturaId1 INT;
+DECLARE @facturaId2 INT;
+DECLARE @facturaId3 INT;
+DECLARE @currentCobroId BIGINT = 1000; -- Contador para idCobro (no IDENTITY)
 
--- Paso 2: Recrear la tabla socios.estadoMembresiaSocio con otra estructura
-CREATE TABLE socios.estadoMembresiaSocio (
-    idSocio INT NOT NULL, -- Ya NO es IDENTITY
-    tipoCategoriaSocio VARCHAR(15) CHECK (tipoCategoriaSocio IN ('Cadete', 'Mayor', 'Menor')),
-    estadoMorosidadMembresia VARCHAR(22) NOT NULL CHECK (estadoMorosidadMembresia IN ('Activo', 'Moroso-1er Vencimiento', 'Moroso-2do Vencimiento', 'Inactivo')),
-    fechaVencimientoMembresia DATE NOT NULL,
-    CONSTRAINT PK_estadoMembresiaSocio PRIMARY KEY (idSocio, fechaVencimientoMembresia),
-    FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
-);
-GO
-
--- Inserción de datos en socios.estadoMembresiaSocio
-INSERT INTO socios.estadoMembresiaSocio (idSocio, tipoCategoriaSocio, fechaVencimientoMembresia, estadoMorosidadMembresia) VALUES
--- Socio 4001: Moroso recurrente (4 incumplimientos en 2024)
-(4001, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
-(4001, 'Mayor', '2024-02-29', 'Moroso-1er Vencimiento'),
-(4001, 'Mayor', '2024-03-31', 'Moroso-2do Vencimiento'),
-(4001, 'Mayor', '2024-04-30', 'Inactivo'),
-(4001, 'Mayor', '2024-05-31', 'Activo'),
-(4001, 'Mayor', '2024-06-30', 'Moroso-1er Vencimiento'),
--- Socio 4002: Moroso recurrente (3 incumplimientos en 2024)
-(4002, 'Mayor', '2024-01-31', 'Activo'),
-(4002, 'Mayor', '2024-02-29', 'Moroso-1er Vencimiento'),
-(4002, 'Mayor', '2024-03-31', 'Moroso-1er Vencimiento'),
-(4002, 'Mayor', '2024-04-30', 'Moroso-2do Vencimiento'),
-(4002, 'Mayor', '2024-05-31', 'Activo'),
--- Socio 4003: Moroso recurrente (4 incumplimientos en 2024)
-(4003, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
-(4003, 'Mayor', '2024-02-29', 'Moroso-2do Vencimiento'),
-(4003, 'Mayor', '2024-03-31', 'Inactivo'),
-(4003, 'Mayor', '2024-04-30', 'Moroso-1er Vencimiento'),
-(4003, 'Mayor', '2024-05-31', 'Activo'),
--- Socio 4004: Solo 2 incumplimientos (no aparecerá en el reporte con >2)
-(4004, 'Mayor', '2024-01-31', 'Activo'),
-(4004, 'Mayor', '2024-02-29', 'Activo'),
-(4004, 'Mayor', '2024-03-31', 'Moroso-1er Vencimiento'),
-(4004, 'Mayor', '2024-04-30', 'Moroso-2do Vencimiento'),
-(4004, 'Mayor', '2024-05-31', 'Activo'),
--- Socio 4005: Sin incumplimientos en 2024
-(4005, 'Mayor', '2024-01-31', 'Activo'),
-(4005, 'Mayor', '2024-02-29', 'Activo'),
-(4005, 'Mayor', '2024-03-31', 'Activo'),
-(4005, 'Mayor', '2024-04-30', 'Activo'),
-(4005, 'Mayor', '2024-05-31', 'Activo'),
--- Socio 4006: Moroso recurrente (3 incumplimientos en 2024, mezclado con 2025)
-(4006, 'Mayor', '2024-01-31', 'Moroso-1er Vencimiento'),
-(4006, 'Mayor', '2024-02-29', 'Activo'),
-(4006, 'Mayor', '2024-03-31', 'Moroso-2do Vencimiento'),
-(4006, 'Mayor', '2024-04-30', 'Activo'),
-(4006, 'Mayor', '2024-05-31', 'Inactivo'),
-(4006, 'Mayor', '2025-01-31', 'Moroso-1er Vencimiento'),
--- Socio 4007: Moroso recurrente (3 incumplimientos en 2025)
-(4007, 'Mayor', '2025-01-31', 'Moroso-1er Vencimiento'),
-(4007, 'Mayor', '2025-02-28', 'Moroso-1er Vencimiento'),
-(4007, 'Mayor', '2025-03-31', 'Moroso-2do Vencimiento'),
-(4007, 'Mayor', '2025-04-30', 'Activo');
-GO
-
--- VER DATOS CARGADOS
-SELECT * FROM socios.estadoMembresiaSocio;
-
--- 0) Limpiar datos en orden (hijos antes que padres)
+-- Paso 1: Limpiar las tablas de hijo a padre
+DELETE FROM pagos.cobroFactura;
 DELETE FROM pagos.cuerpoFactura;
 DELETE FROM pagos.facturaEmitida;
 DELETE FROM pagos.facturaActiva;
-DELETE FROM actividades.deporteActivo;
-DELETE FROM socios.rolVigente;
-DELETE FROM pagos.cobroFactura;
-DELETE FROM pagos.reembolso;
-DELETE FROM descuentos.descuentoVigente;
-DELETE FROM socios.grupoFamiliarActivo;
-DELETE FROM socios.grupoFamiliar;
-DELETE FROM socios.estadoMembresiaSocio;
-DELETE FROM socios.socio;
-DELETE FROM socios.ingresoSocio;
-DELETE FROM socios.rolDisponible;
-DELETE FROM socios.categoriaMembresiaSocio;
+PRINT 'Tablas de pagos limpiadas.';
+
+-- Paso 2: Insertar datos de prueba en facturaActiva, facturaEmitida y cuerpoFactura
+PRINT 'Insertando datos de prueba para facturas...';
+
+-- Factura 1: Futsal y Pago Mensual (Total 25000 + 25000 = 50000)
+INSERT INTO pagos.facturaActiva (idSocio, categoriaSocio, estadoFactura, fechaEmision, fechaPrimerVencimiento, fechaSegundoVencimiento)
+VALUES (@idSocio1, @categoriaSocio1, 'Pendiente', GETDATE(), DATEADD(day, 15, GETDATE()), DATEADD(day, 30, GETDATE()));
+SET @facturaId1 = SCOPE_IDENTITY();
+INSERT INTO pagos.facturaEmitida (idFactura, nombreSocio, apellidoSocio, fechaEmision, cuilDeudor, domicilio, modalidadCobro, importeBruto, importeTotal)
+VALUES (@facturaId1, 'NombreSocio1', 'ApellidoSocio1', GETDATE(), '20-12345678-9', 'Calle Falsa 123', 'Contado', 50000.00, 50000.00);
+INSERT INTO pagos.cuerpoFactura (idFactura, idItemFactura, tipoItem, descripcionItem, importeItem) VALUES
+(@facturaId1, 1, 'Mensual', 'Futsal', 25000.00),
+(@facturaId1, 2, 'Cuota', 'Pago Mensual', 25000.00);
+
+-- Factura 2: Vóley y Pago Mensual (Total 30000 + 25000 = 55000)
+INSERT INTO pagos.facturaActiva (idSocio, categoriaSocio, estadoFactura, fechaEmision, fechaPrimerVencimiento, fechaSegundoVencimiento)
+VALUES (@idSocio2, @categoriaSocio1, 'Pendiente', GETDATE(), DATEADD(day, 15, GETDATE()), DATEADD(day, 30, GETDATE()));
+SET @facturaId2 = SCOPE_IDENTITY();
+INSERT INTO pagos.facturaEmitida (idFactura, nombreSocio, apellidoSocio, fechaEmision, cuilDeudor, domicilio, modalidadCobro, importeBruto, importeTotal)
+VALUES (@facturaId2, 'NombreSocio2', 'ApellidoSocio2', GETDATE(), '20-87654321-0', 'Avenida Siempre Viva 456', 'Tarjeta', 55000.00, 55000.00);
+INSERT INTO pagos.cuerpoFactura (idFactura, idItemFactura, tipoItem, descripcionItem, importeItem) VALUES
+(@facturaId2, 1, 'Mensual', 'Vóley', 30000.00),
+(@facturaId2, 2, 'Cuota', 'Pago Mensual', 25000.00);
+
+-- Factura 3: Taekwondo, Natación y Pago Mensual (Total 25000 + 45000 + 25000 = 95000)
+INSERT INTO pagos.facturaActiva (idSocio, categoriaSocio, estadoFactura, fechaEmision, fechaPrimerVencimiento, fechaSegundoVencimiento)
+VALUES (@idSocio3, @categoriaSocio1, 'Pendiente', GETDATE(), DATEADD(day, 15, GETDATE()), DATEADD(day, 30, GETDATE()));
+SET @facturaId3 = SCOPE_IDENTITY();
+INSERT INTO pagos.facturaEmitida (idFactura, nombreSocio, apellidoSocio, fechaEmision, cuilDeudor, domicilio, modalidadCobro, importeBruto, importeTotal)
+VALUES (@facturaId3, 'NombreSocio3', 'ApellidoSocio3', GETDATE(), '20-11223344-5', 'Boulevard de los Sueños 789', 'Contado', 95000.00, 95000.00);
+INSERT INTO pagos.cuerpoFactura (idFactura, idItemFactura, tipoItem, descripcionItem, importeItem) VALUES
+(@facturaId3, 1, 'Mensual', 'Taekwondo', 25000.00),
+(@facturaId3, 2, 'Mensual', 'Natación', 45000.00),
+(@facturaId3, 3, 'Cuota', 'Pago Mensual', 25000.00);
+
+PRINT 'Datos de prueba de facturas insertados.';
+
+-- Paso 5: Mostrar el estado inicial de las facturas y sus cuerpos
+PRINT '--- ESTADO INICIAL DE FACTURAS Y CUERPOS ---';
+SELECT fa.idFactura, fa.estadoFactura, fe.importeTotal,
+       cf.idItemFactura, cf.tipoItem, cf.descripcionItem, cf.importeItem
+FROM pagos.facturaActiva fa
+JOIN pagos.facturaEmitida fe ON fa.idFactura = fe.idFactura
+JOIN pagos.cuerpoFactura cf ON fe.idFactura = cf.idFactura
+ORDER BY fa.idFactura, cf.idItemFactura;
+
+-- Paso 3: Simular escenarios de cobro y actualizar el estado de las facturas
+
+PRINT '--- ESCENARIO 1: Pago Parcial para Factura 1 ---';
+SET @currentCobroId = @currentCobroId + 1;
+INSERT INTO pagos.cobroFactura (idCobro, idFacturaCobrada, idSocio, categoriaSocio, fechaEmisionCobro, nombreSocio, apellidoSocio, cuilDeudor, domicilio, modalidadCobro, numeroCuota, totalAbonado)
+VALUES (@currentCobroId, @facturaId1, @idSocio1, @categoriaSocio1, GETDATE(), 'NombreSocio1', 'ApellidoSocio1', '20-12345678-9', 'Calle Falsa 123', 'Efectivo', 1, 10000.00);
+
+EXEC pagos.actualizarCobroFactura @idCobro = @currentCobroId, @idFacturaCobrada = @facturaId1, @nuevoTotalAbonado = 10000.00;
+
+PRINT 'Estado de Factura 1 después de pago parcial:';
+SELECT idFactura, estadoFactura FROM pagos.facturaActiva WHERE idFactura = @facturaId1;
+SELECT * FROM pagos.cobroFactura WHERE idFacturaCobrada = @facturaId1;
+
+PRINT '--- ESCENARIO 2: Pago Completo para Factura 2 en una sola exhibición ---';
+SET @currentCobroId = @currentCobroId + 1;
+INSERT INTO pagos.cobroFactura (idCobro, idFacturaCobrada, idSocio, categoriaSocio, fechaEmisionCobro, nombreSocio, apellidoSocio, cuilDeudor, domicilio, modalidadCobro, numeroCuota, totalAbonado)
+VALUES (@currentCobroId, @facturaId2, @idSocio2, @categoriaSocio1, GETDATE(), 'NombreSocio2', 'ApellidoSocio2', '20-87654321-0', 'Avenida Siempre Viva 456', 'Tarjeta', 1, 55000.00); -- Ajustado a nuevo total
+
+EXEC pagos.actualizarCobroFactura @idCobro = @currentCobroId, @idFacturaCobrada = @facturaId2, @nuevoTotalAbonado = 55000.00; -- Ajustado a nuevo total
+
+PRINT 'Estado de Factura 2 después de pago completo:';
+SELECT idFactura, estadoFactura FROM pagos.facturaActiva WHERE idFactura = @facturaId2;
+SELECT * FROM pagos.cobroFactura WHERE idFacturaCobrada = @facturaId2;
+
+PRINT '--- ESCENARIO 3: Pago Completo para Factura 1 en múltiples exhibiciones ---';
+-- Continuamos con Factura 1 (total 50000.00, ya pagó 10000.00, restan 40000.00)
+SET @currentCobroId = @currentCobroId + 1;
+INSERT INTO pagos.cobroFactura (idCobro, idFacturaCobrada, idSocio, categoriaSocio, fechaEmisionCobro, nombreSocio, apellidoSocio, cuilDeudor, domicilio, modalidadCobro, numeroCuota, totalAbonado)
+VALUES (@currentCobroId, @facturaId1, @idSocio1, @categoriaSocio1, DATEADD(day, 5, GETDATE()), 'NombreSocio1', 'ApellidoSocio1', '20-12345678-9', 'Calle Falsa 123', 'Efectivo', 2, 40000.00); -- Paga el resto
+
+EXEC pagos.actualizarCobroFactura @idCobro = @currentCobroId, @idFacturaCobrada = @facturaId1, @nuevoTotalAbonado = 40000.00;
+
+PRINT 'Estado de Factura 1 después de pago completo en múltiples exhibiciones:';
+SELECT idFactura, estadoFactura FROM pagos.facturaActiva WHERE idFactura = @facturaId1;
+SELECT * FROM pagos.cobroFactura WHERE idFacturaCobrada = @facturaId1;
+
+PRINT '--- ESCENARIO 4: Actualizar un cobro existente para Factura 3 (pago inicial) ---';
+SET @currentCobroId = @currentCobroId + 1;
+DECLARE @cobroIdFactura3_1 BIGINT = @currentCobroId;
+INSERT INTO pagos.cobroFactura (idCobro, idFacturaCobrada, idSocio, categoriaSocio, fechaEmisionCobro, nombreSocio, apellidoSocio, cuilDeudor, domicilio, modalidadCobro, numeroCuota, totalAbonado)
+VALUES (@cobroIdFactura3_1, @facturaId3, @idSocio3, @categoriaSocio1, GETDATE(), 'NombreSocio3', 'ApellidoSocio3', '20-11223344-5', 'Boulevard de los Sueños 789', 'Efectivo', 1, 50000.00); -- Ajustado a un pago parcial
+
+-- Simular que se actualiza el monto de este cobro
+EXEC pagos.actualizarCobroFactura @idCobro = @cobroIdFactura3_1, @idFacturaCobrada = @facturaId3, @nuevoTotalAbonado = 50000.00;
+
+PRINT 'Estado de Factura 3 después de actualizar un cobro:';
+SELECT idFactura, estadoFactura FROM pagos.facturaActiva WHERE idFactura = @facturaId3;
+SELECT * FROM pagos.cobroFactura WHERE idFacturaCobrada = @facturaId3;
+
+PRINT '--- ESCENARIO 5: Segundo pago para Factura 3 para completarla ---';
+SET @currentCobroId = @currentCobroId + 1;
+INSERT INTO pagos.cobroFactura (idCobro, idFacturaCobrada, idSocio, categoriaSocio, fechaEmisionCobro, nombreSocio, apellidoSocio, cuilDeudor, domicilio, modalidadCobro, numeroCuota, totalAbonado)
+VALUES (@currentCobroId, @facturaId3, @idSocio3, @categoriaSocio1, DATEADD(day, 3, GETDATE()), 'NombreSocio3', 'ApellidoSocio3', '20-11223344-5', 'Boulevard de los Sueños 789', 'Tarjeta', 2, 45000.00); -- Paga el resto (95000 - 50000 = 45000)
+
+EXEC pagos.actualizarCobroFactura @idCobro = @currentCobroId, @idFacturaCobrada = @facturaId3, @nuevoTotalAbonado = 45000.00;
+
+PRINT 'Estado de Factura 3 después del segundo pago (completo):';
+SELECT idFactura, estadoFactura FROM pagos.facturaActiva WHERE idFactura = @facturaId3;
+SELECT * FROM pagos.cobroFactura WHERE idFacturaCobrada = @facturaId3;
+
+PRINT '--- ESCENARIO 6: Intento de actualizar un cobro no existente (debería lanzar error) ---';
+BEGIN TRY
+    EXEC pagos.actualizarCobroFactura @idCobro = 999999, @idFacturaCobrada = @facturaId1, @nuevoTotalAbonado = 500.00;
+END TRY
+BEGIN CATCH
+    PRINT 'ERROR ESPERADO: ' + ERROR_MESSAGE();
+END CATCH;
 GO
 
--- 1) Semilla: categorías de membresía vigentes
-INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia, vigenciaHasta)
-VALUES
-  ('Cadete',  500.00, DATEADD(YEAR,1,GETDATE())),
-  ('Mayor',  1000.00, DATEADD(YEAR,1,GETDATE())),
-  ('Menor',   300.00, DATEADD(YEAR,1,GETDATE()));
-GO
-
--- 2) Semilla: deportes disponibles
-INSERT INTO actividades.deporteDisponible (descripcion, tipo, costoPorMes, vigenciaHasta)
-VALUES
-  ('Natación', 'Pileta',  800.00, DATEADD(YEAR,1,GETDATE())),
-  ('Fútbol',   'Cancha', 600.00, DATEADD(YEAR,1,GETDATE()));
-GO
-
--- 3) Semilla: roles disponibles
-INSERT INTO socios.rolDisponible (idRol, descripcion)
-VALUES 
-  (1, 'ADMIN'),
-  (2, 'SOCIODEPOR'),
-  (3, 'INVITADO');
-GO
-
--- ================================
--- 4) Prueba 1: Socio sin deporte ni grupo
--- ================================
-DECLARE @new1 INT, @fechaIngreso DATE=GETDATE();
-EXEC socios.registrarNuevoSocio
-  @fechaIngreso        = @fechaIngreso,
-  @primerUsuario       = 'juan.perez',
-  @primerContrasenia   = 'Init1234',
-  @tipoCategoriaSocio  = 'Mayor',
-  @dni                 = '30111222',
-  @cuil                = '27-30111222-5',
-  @nombre              = 'Juan',
-  @apellido            = 'Pérez',
-  @email               = 'juan.perez@mail.com',
-  @fechaNacimiento     = '1985-05-15',
-  @telefonoContacto    = '1144455566',
-  @telefonoEmergencia  = '1199988877',
-  @nombreObraSocial    = 'OSDE',
-  @nroSocioObraSocial  = 'OS123',
-  @usuario             = 'juan.perez',
-  @contrasenia         = 'User1234',
-  @direccion           = 'Calle Falsa 123',
-  @deportePreferido    = NULL,
-  @rolAsignar          = 1,
-  @grupoFamiliar       = NULL,
-  @rolGrupoFamiliar    = NULL,
-  @newIdSocio          = @new1 OUTPUT;
-PRINT '--> Socio 1 ID=' + CAST(@new1 AS VARCHAR(10));
-GO
-
--- =================================
--- 5) Prueba 2: Socio Tutor crea grupo
--- =================================
-DECLARE @new2 INT, @deportePreferido VARCHAR(15)=(SELECT TOP 1 idDeporte FROM actividades.deporteDisponible WHERE descripcion='Natación'), @fechaIngreso DATE=GETDATE();
-EXEC socios.registrarNuevoSocio
-  @fechaIngreso        = @fechaIngreso,
-  @primerUsuario       = 'maria.gomez',
-  @primerContrasenia   = 'Init5678',
-  @tipoCategoriaSocio  = 'Cadete',
-  @dni                 = '30222333',
-  @cuil                = '23-30222333-5',
-  @nombre              = 'María',
-  @apellido            = 'Gómez',
-  @email               = 'maria.gomez@mail.com',
-  @fechaNacimiento     = '2000-03-22',
-  @telefonoContacto    = '1166677788',
-  @telefonoEmergencia  = '1199911122',
-  @nombreObraSocial    = 'Galeno',
-  @nroSocioObraSocial  = 'GA456',
-  @usuario             = 'maria.gomez',
-  @contrasenia         = 'User5678',
-  @direccion           = 'Av. Siempre Viva 742',
-  @deportePreferido    = @deportePreferido,
-  @rolAsignar          = 2,
-  @grupoFamiliar       = 100,         -- Nuevo grupo
-  @rolGrupoFamiliar    = 'Tutor',
-  @newIdSocio          = @new2 OUTPUT;
-PRINT '--> Socio 2 (Tutor) ID=' + CAST(@new2 AS VARCHAR(10));
-GO
-
--- ================================
--- 6) Prueba 3: Socio Menor se une al grupo
--- ================================
-DECLARE @new3 INT, @fechaIngreso DATE=GETDATE();
-EXEC socios.registrarNuevoSocio
-  @fechaIngreso        = @fechaIngreso,
-  @primerUsuario       = 'pedro.gomez',
-  @primerContrasenia   = 'Init9999',
-  @tipoCategoriaSocio  = 'Menor',
-  @dni                 = '30333444',
-  @cuil                = '20-30333444-1',
-  @nombre              = 'Pedro',
-  @apellido            = 'Gómez',
-  @email               = 'pedro.gomez@mail.com',
-  @fechaNacimiento     = '2010-08-12',
-  @telefonoContacto    = '1177788990',
-  @telefonoEmergencia  = '1199933344',
-  @nombreObraSocial    = 'OSDE',
-  @nroSocioObraSocial  = 'OS789',
-  @usuario             = 'pedro.gomez',
-  @contrasenia         = 'User9999',
-  @direccion           = 'Av. Siempre Viva 742',
-  @deportePreferido    = NULL,
-  @rolAsignar          = 3,
-  @grupoFamiliar       = 100,         -- Grupo creado por María
-  @rolGrupoFamiliar    = 'Menor',
-  @newIdSocio          = @new3 OUTPUT;
-PRINT '--> Socio 3 (Menor) ID=' + CAST(@new3 AS VARCHAR(10));
-GO
-
--- ================================
--- 7) Verificación final
--- ================================
-SELECT * FROM socios.socio;
-SELECT * FROM socios.grupoFamiliar;
-SELECT * FROM socios.grupoFamiliarActivo;
-SELECT * FROM descuentos.descuentoVigente;
-SELECT * FROM actividades.deporteActivo;
-SELECT * FROM pagos.facturaActiva;
-SELECT * FROM pagos.facturaEmitida;
+PRINT '--- JUEGO DE PRUEBAS FINALIZADO ---';
+SELECT 'Estado final de todas las facturas:' AS Mensaje;
+SELECT idFactura, estadoFactura, fechaEmision, fechaPrimerVencimiento, fechaSegundoVencimiento FROM pagos.facturaActiva;
+SELECT 'Contenido final de cuerpoFactura:' AS Mensaje;
 SELECT * FROM pagos.cuerpoFactura;
-SELECT * FROM socios.rolVigente;
+SELECT 'Contenido final de cobroFactura:' AS Mensaje;
+SELECT * FROM pagos.cobroFactura;
 GO

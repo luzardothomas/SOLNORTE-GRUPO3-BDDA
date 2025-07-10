@@ -7,18 +7,18 @@
 --   - Santillan, Lautaro Ezequiel - 45.175.053
 ----------------------------------------------------------------------------------------------------
 
--- ************************************************************************************************
+-- ********************
 -- CREAR BASE DE DATOS
--- ************************************************************************************************
+-- ********************
 CREATE DATABASE Com2900G03;
 GO
 -- Usar la base de datos
 USE Com2900G03;
 GO
 
--- ************************************************************************************************
+-- ********************
 -- CREACION DE SCHEMAS
--- ************************************************************************************************
+-- ********************
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name IN ('socios', 'actividades', 'pagos', 'descuentos', 'itinerarios', 'coberturas', 'reservas'))
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'socios') EXEC('CREATE SCHEMA socios;');
@@ -31,9 +31,9 @@ BEGIN
 END
 GO
 
--- ************************************************************************************************
+-- *******************
 -- CREACION DE TABLAS
--- ************************************************************************************************
+-- *******************
 -- 1. Creación de tablas sin dependencias de clave foránea directas, o con claves primarias referenciables.
 
 -- 1.1 socios.categoriaSocio
@@ -752,7 +752,6 @@ BEGIN
   END CATCH
 END;
 GO
-
 
 CREATE OR ALTER PROCEDURE socios.actualizarSocio
   @idSocio                INT,

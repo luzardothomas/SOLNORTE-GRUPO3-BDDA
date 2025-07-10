@@ -11,7 +11,7 @@
 USE Com2900G03;
 GO
 
--- =============================================
+-- ==================================================================================================================================
 -- Reporte 1: Morosos Recurrentes (FUNCIONA)
 -- Descripcion: Reporte de los socios morosos, que hayan incumplido en más de dos oportunidades dado un rango de fechas a ingresar. 
 -- El reporte debe contener los siguientes datos:
@@ -22,7 +22,7 @@ GO
 --												Mes incumplido
 --												Ordenados de Mayor a menor por ranking de morosidad
 -- El mismo debe ser desarrollado utilizando Windows Function.
--- =============================================
+-- ==================================================================================================================================
 CREATE OR ALTER PROCEDURE reporte_morososRecurrentes
     @FechaInicio DATE,
     @FechaFin DATE
@@ -110,12 +110,12 @@ GO
 EXEC reporte_ingresosPorActividadMensual; -- Para el año actual
 GO
 
--- =====================================================================
+-- ===========================================================================================================
 -- Reporte 3: Socios con Actividad Alternada (Inasistencias) (FUNCIONA)
 -- Descripcion: Reporte de la cantidad de socios que han realizado alguna actividad de forma alternada
 --				(inasistencias) por categoría de socios y actividad, ordenado según cantidad de inasistencias
 --				ordenadas de mayor a menor.
--- =====================================================================
+-- ===========================================================================================================
 CREATE OR ALTER PROCEDURE reporte_sociosConInasistencias
 AS
 BEGIN
@@ -155,11 +155,11 @@ GO
 -- EJECUCION DEL REPORTE
 EXEC reporte_sociosConInasistencias;
 
--- ===============================================================
+-- ======================================================================================================================
 -- Reporte 4: Socios con Cero Asistencias a Actividad (FUNCIONA)
 -- Descripcion: Reporte que contenga a los socios que no han asistido a alguna clase 
 --				de la actividad que realizan. El reporte debe contener: Nombre, Apellido, edad, categoría y la actividad
--- ===============================================================
+-- ======================================================================================================================
 CREATE OR ALTER PROCEDURE reporte_sociosSinAsistencia
 AS
 BEGIN
