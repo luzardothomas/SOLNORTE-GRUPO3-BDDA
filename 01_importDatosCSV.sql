@@ -38,7 +38,11 @@ EXEC xp_instance_regread
     @loginMode OUTPUT;
 
 SELECT @loginMode AS LoginMode;
+GO
 
+-- ****************
+-- CODIGO OBSOLETO
+-- ****************
 /*USE master;
 GO
 ALTER SERVER ROLE bulkadmin ADD MEMBER [LA-BESTIA\santi];
@@ -128,53 +132,44 @@ GO*/
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV que contiene los datos de las categorías de socio.
 -- ************************************************************************************************
 CREATE OR ALTER PROCEDURE socios.importarCategoriasSocio
-    @FilePath NVARCHAR(255) -- Parámetro para la ruta del archivo CSV
+    @FilePath NVARCHAR(255)
 AS
 BEGIN
     SET NOCOUNT ON;
-    -- Declaramos una variable para construir la consulta de BULK INSERT dinámicamente
     DECLARE @consultaSqlDinamica NVARCHAR(MAX);
     IF OBJECT_ID('tempdb..#StagingCategoriasSocio') IS NOT NULL
         DROP TABLE #StagingCategoriasSocio;
-    -- Creamos la tabla temporal. Las columnas aquí deben coincidir
+
     CREATE TABLE #StagingCategoriasSocio (
-        CategoriaSocioCsv NVARCHAR(15),      -- Corresponde a 'Categoria socio' del CSV
-        ValorCuotaCsv DECIMAL(10, 2),       -- Corresponde a 'Valor cuota' del CSV
-        VigenteHastaCsv NVARCHAR(20)        -- Corresponde a 'Vigente hasta' del CSV (NVARCHAR(20) para mayor seguridad)
+        CategoriaSocioCsv NVARCHAR(15),       -- Corresponde a 'Categoria socio' del CSV
+        ValorCuotaCsv DECIMAL(10, 2),         -- Corresponde a 'Valor cuota' del CSV
+        VigenteHastaCsv NVARCHAR(20)          -- Corresponde a 'Vigente hasta' del CSV
     );
-    -- Manejo de errores: Si algo sale mal, capturamos el error
     BEGIN TRY
-        -- Construimos la sentencia BULK INSERT de forma dinámica.
         SET @consultaSqlDinamica = N'BULK INSERT #StagingCategoriasSocio
                                      FROM ''' + @FilePath + N'''
                                      WITH
                                      (
                                          FIRSTROW = 2,           -- Empezamos a leer desde la segunda fila (ignoramos el encabezado)
-                                         FIELDTERMINATOR = '';'',  -- *** IMPORTANTE: Usa punto y coma (;) como delimitador ***
+                                         FIELDTERMINATOR = '';'', -- *** IMPORTANTE: Usa punto y coma (;) como delimitador ***
                                          ROWTERMINATOR = ''0x0a'', -- El final de cada fila se identifica con un salto de línea (LF).
-                                                                  -- Si tu CSV fuera de Windows, podría ser ''0x0d0a'' (CRLF).
                                          TABLOCK                  -- Ayuda a optimizar la carga masiva bloqueando la tabla temporal
-                                     );';
-        
+                                     );';   
         -- Ejecutamos la consulta BULK INSERT que acabamos de construir
         EXEC sp_executesql @consultaSqlDinamica;
         -- MERGE nos permite insertar nuevas filas o actualizar existentes en un solo paso.
-        MERGE socios.categoriaMembresiaSocio AS TablaDestino -- Nuestra tabla final donde queremos los datos
+        MERGE socios.categoriaMembresiaSocio AS TablaDestino
         USING (
-            -- Realizamos las transformaciones necesarias desde los datos del CSV.
             SELECT
                 st.CategoriaSocioCsv AS TipoCategoria,
                 st.ValorCuotaCsv AS CostoMembresia,
                 ISNULL(TRY_CONVERT(DATE, st.VigenteHastaCsv, 103), '2025-05-31') AS VigenciaHasta,
-                -- Si el CSV no la provee, usaremos ese valor por defecto.
-                1 AS EstadoCategoria -- Asumimos que las categorías importadas están activas
+                1 AS estadoCategoriaSocio -- Agregado: Siempre 1 (activo) al importar desde CSV
             FROM
                 #StagingCategoriasSocio st
         ) AS TablaOrigen (tipo, costoMembresia, vigenciaHasta, estadoCategoriaSocio)
         -- Definimos las condiciones para saber si una fila ya existe en la tabla destino.
-        -- En este caso, la clave de negocio para una categoría es su 'tipo'.
         ON (TablaDestino.tipo = TablaOrigen.tipo)
-        -- Si la fila ya existe en la tabla destino (coincide por el 'tipo' de categoría)
         WHEN MATCHED THEN
             UPDATE SET
                 TablaDestino.costoMembresia = TablaOrigen.costoMembresia,
@@ -183,18 +178,15 @@ BEGIN
         -- Si la fila NO existe en la tabla destino (es una nueva categoría)
         WHEN NOT MATCHED THEN
             INSERT (tipo, costoMembresia, vigenciaHasta, estadoCategoriaSocio)
-            VALUES (TablaOrigen.tipo, TablaOrigen.costoMembresia, TablaOrigen.vigenciaHasta, TablaOrigen.estadoCategoriaSocio);
-        -- Mensaje de éxito al usuario
+            VALUES (TablaOrigen.tipo, TablaOrigen.costoMembresia, TablaOrigen.vigenciaHasta, TablaOrigen.estadoCategoriaSocio);   
         PRINT '¡Proceso de importación de categorías de socio completado con éxito!';
     END TRY
     BEGIN CATCH
         DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
         DECLARE @SeveridadError INT = ERROR_SEVERITY();
         DECLARE @EstadoError INT = ERROR_STATE();
-        -- Lanzamos el error capturado
         RAISERROR(@MensajeError, @SeveridadError, @EstadoError);
     END CATCH;
-    -- Al finalizar, eliminamos la tabla temporal para liberar recursos
     IF OBJECT_ID('tempdb..#StagingCategoriasSocio') IS NOT NULL
         DROP TABLE #StagingCategoriasSocio;
 END;
@@ -202,7 +194,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC socios.importarCategoriasSocio 
-	@FilePath = 'C:\Importar\dataImport\tarifasCategoriaSocio.csv';
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasCategoriaSocio.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -280,7 +272,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarDeportesDisponibles 
-	@FilePath = 'C:\Importar\dataImport\tarifasActividades.csv';
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividades.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -310,7 +302,7 @@ CREATE TABLE #StagingPiletaActividad (
 
 -- 2) Bulk insert usando exactly tu delimitador ';'
 BULK INSERT #StagingPiletaActividad
-  FROM 'C:\Importar\dataImport\tarifasActividadesPileta.csv'
+  FROM 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividadesPileta.csv'
   WITH
   (
     FIRSTROW        = 2,
@@ -325,26 +317,25 @@ SELECT
   ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS RowNum,
   DescripcionCsv, ValorCsv, VigenciaHastaCsv
 FROM #StagingPiletaActividad;
+GO
 
 CREATE OR ALTER PROCEDURE actividades.importarDeportesPileta
     @FilePath NVARCHAR(255)
 AS
 BEGIN
     SET NOCOUNT ON;
-
     DECLARE 
-        @DefaultTariffValue   DECIMAL(10,2) = 0.01,
-        @DefaultApertura      TIME          = '10:00:00',
-        @DefaultCierre        TIME          = '20:00:00',
-        @DefaultVigenciaHasta DATE          = '2025-02-28',
-        @sql                  NVARCHAR(MAX);
+        @DefaultTariffValue     DECIMAL(10,2) = 0.01,
+        @DefaultApertura        TIME          = '10:00:00',
+        @DefaultCierre          TIME          = '20:00:00',
+        @DefaultVigenciaHasta   DATE          = '2025-02-28',
+        @sql                    NVARCHAR(MAX);
 
     ---------------------------
     -- 1) STAGING
     ---------------------------
     IF OBJECT_ID('tempdb..#StagingPiletaActividad') IS NOT NULL
         DROP TABLE #StagingPiletaActividad;
-
     CREATE TABLE #StagingPiletaActividad (
         DescripcionCsv      NVARCHAR(100),
         ValorCsv            NVARCHAR(50),
@@ -368,8 +359,7 @@ BEGIN
         MAXERRORS       = 1
       );';
     EXEC sp_executesql @sql;
-
-    /*PRINT 'Filas cargadas en staging: ' 
+    /*PRINT 'Filas cargadas en staging: '
           + CAST((SELECT COUNT(*) FROM #StagingPiletaActividad) AS VARCHAR(10));*/
 
     ---------------------------
@@ -377,24 +367,23 @@ BEGIN
     ---------------------------
     IF OBJECT_ID('tempdb..#ProcessedPiletaActividad') IS NOT NULL
         DROP TABLE #ProcessedPiletaActividad;
-
     CREATE TABLE #ProcessedPiletaActividad (
-        idActividad                    INT          PRIMARY KEY,
-        tarifaSocioPorDiaAdulto        DECIMAL(10,2),
-        tarifaSocioPorTemporadaAdulto  DECIMAL(10,2),
-        tarifaSocioPorMesAdulto        DECIMAL(10,2),
-        tarifaSocioPorDiaMenor         DECIMAL(10,2),
-        tarifaSocioPorTemporadaMenor   DECIMAL(10,2),
-        tarifaSocioPorMesMenor         DECIMAL(10,2),
-        tarifaInvitadoPorDiaAdulto     DECIMAL(10,2),
+        idActividad                      INT           PRIMARY KEY,
+        tarifaSocioPorDiaAdulto          DECIMAL(10,2),
+        tarifaSocioPorTemporadaAdulto    DECIMAL(10,2),
+        tarifaSocioPorMesAdulto          DECIMAL(10,2),
+        tarifaSocioPorDiaMenor           DECIMAL(10,2),
+        tarifaSocioPorTemporadaMenor     DECIMAL(10,2),
+        tarifaSocioPorMesMenor           DECIMAL(10,2),
+        tarifaInvitadoPorDiaAdulto       DECIMAL(10,2),
         tarifaInvitadoPorTemporadaAdulto DECIMAL(10,2),
-        tarifaInvitadoPorMesAdulto     DECIMAL(10,2),
-        tarifaInvitadoPorDiaMenor      DECIMAL(10,2),
-        tarifaInvitadoPorTemporadaMenor DECIMAL(10,2),
-        tarifaInvitadoPorMesMenor      DECIMAL(10,2),
-        horaAperturaActividad          TIME,
-        horaCierreActividad            TIME,
-        vigenciaHasta                  DATE
+        tarifaInvitadoPorMesAdulto       DECIMAL(10,2),
+        tarifaInvitadoPorDiaMenor        DECIMAL(10,2),
+        tarifaInvitadoPorTemporadaMenor  DECIMAL(10,2),
+        tarifaInvitadoPorMesMenor        DECIMAL(10,2),
+        horaAperturaActividad            TIME,
+        horaCierreActividad              TIME,
+        vigenciaHasta                    DATE
     );
 
     ---------------------------
@@ -466,29 +455,43 @@ BEGIN
     BEGIN
       UPDATE t
       SET
-        t.tarifaSocioPorDiaAdulto        = p.tarifaSocioPorDiaAdulto,
-        t.tarifaSocioPorTemporadaAdulto  = p.tarifaSocioPorTemporadaAdulto,
-        t.tarifaSocioPorMesAdulto        = p.tarifaSocioPorMesAdulto,
-        t.tarifaSocioPorDiaMenor         = p.tarifaSocioPorDiaMenor,
-        t.tarifaSocioPorTemporadaMenor   = p.tarifaSocioPorTemporadaMenor,
-        t.tarifaSocioPorMesMenor         = p.tarifaSocioPorMesMenor,
-        t.tarifaInvitadoPorDiaAdulto     = p.tarifaInvitadoPorDiaAdulto,
+        t.tarifaSocioPorDiaAdulto          = p.tarifaSocioPorDiaAdulto,
+        t.tarifaSocioPorTemporadaAdulto    = p.tarifaSocioPorTemporadaAdulto,
+        t.tarifaSocioPorMesAdulto          = p.tarifaSocioPorMesAdulto,
+        t.tarifaSocioPorDiaMenor           = p.tarifaSocioPorDiaMenor,
+        t.tarifaSocioPorTemporadaMenor     = p.tarifaSocioPorTemporadaMenor,
+        t.tarifaSocioPorMesMenor           = p.tarifaSocioPorMesMenor,
+        t.tarifaInvitadoPorDiaAdulto       = p.tarifaInvitadoPorDiaAdulto,
         t.tarifaInvitadoPorTemporadaAdulto = p.tarifaInvitadoPorTemporadaAdulto,
-        t.tarifaInvitadoPorMesAdulto     = p.tarifaInvitadoPorMesAdulto,
-        t.tarifaInvitadoPorDiaMenor      = p.tarifaInvitadoPorDiaMenor,
-        t.tarifaInvitadoPorTemporadaMenor = p.tarifaInvitadoPorTemporadaMenor,
-        t.tarifaInvitadoPorMesMenor      = p.tarifaInvitadoPorMesMenor,
-        t.horaAperturaActividad          = p.horaAperturaActividad,
-        t.horaCierreActividad            = p.horaCierreActividad,
-        t.vigenciaHasta                  = p.vigenciaHasta
+        t.tarifaInvitadoPorMesAdulto       = p.tarifaInvitadoPorMesAdulto,
+        t.tarifaInvitadoPorDiaMenor        = p.tarifaInvitadoPorDiaMenor,
+        t.tarifaInvitadoPorTemporadaMenor  = p.tarifaInvitadoPorTemporadaMenor,
+        t.tarifaInvitadoPorMesMenor        = p.tarifaInvitadoPorMesMenor,
+        t.horaAperturaActividad            = p.horaAperturaActividad,
+        t.horaCierreActividad              = p.horaCierreActividad,
+        t.vigenciaHasta                    = p.vigenciaHasta
       FROM actividades.actividadPileta AS t
       JOIN #ProcessedPiletaActividad AS p ON t.idActividad = p.idActividad;
     END
     ELSE
     BEGIN
       SET IDENTITY_INSERT actividades.actividadPileta ON;
-      INSERT INTO actividades.actividadPileta
-      SELECT * FROM #ProcessedPiletaActividad;
+      INSERT INTO actividades.actividadPileta (
+          idActividad,
+          tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
+          tarifaSocioPorDiaMenor, tarifaSocioPorTemporadaMenor, tarifaSocioPorMesMenor,
+          tarifaInvitadoPorDiaAdulto, tarifaInvitadoPorTemporadaAdulto, tarifaInvitadoPorMesAdulto,
+          tarifaInvitadoPorDiaMenor, tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorMesMenor,
+          horaAperturaActividad, horaCierreActividad, vigenciaHasta
+      )
+      SELECT 
+          idActividad,
+          tarifaSocioPorDiaAdulto, tarifaSocioPorTemporadaAdulto, tarifaSocioPorMesAdulto,
+          tarifaSocioPorDiaMenor, tarifaSocioPorTemporadaMenor, tarifaSocioPorMesMenor,
+          tarifaInvitadoPorDiaAdulto, tarifaInvitadoPorTemporadaAdulto, tarifaInvitadoPorMesAdulto,
+          tarifaInvitadoPorDiaMenor, tarifaInvitadoPorTemporadaMenor, tarifaInvitadoPorMesMenor,
+          horaAperturaActividad, horaCierreActividad, vigenciaHasta
+      FROM #ProcessedPiletaActividad;
       SET IDENTITY_INSERT actividades.actividadPileta OFF;
     END;
 
@@ -497,14 +500,13 @@ BEGIN
     ---------------------------
     DROP TABLE #StagingPiletaActividad;
     DROP TABLE #ProcessedPiletaActividad;
-
     PRINT 'Importación de tarifas de pileta completada correctamente.';
 END;
 GO
 
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarDeportesPileta
-    @FilePath = 'C:\Importar\dataImport\tarifasActividadesPileta.csv';
+    @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\tarifasActividadesPileta.csv';
 GO
 
 SELECT -- FORMAT(valor, 'C', 'es-AR') para mostrar los valores como moneda local de Argentina
@@ -524,7 +526,7 @@ SELECT -- FORMAT(valor, 'C', 'es-AR') para mostrar los valores como moneda local
     horaAperturaActividad,
     horaCierreActividad,
     vigenciaHasta
---SELECT * 
+-- SELECT * -- (PUSIMOS LO DE 'PREGUNTAR EN VENTANILLA' COMO MODELO DE NEGOCIO AL RECREAR QUE HAY UN "ERROR" CON LOS PRECIOS EN LA CARGA Y NO ES CORRECTO EL $0.01)
 FROM actividades.actividadPileta;
 GO
 
@@ -535,120 +537,114 @@ GO
 --   @FilePath NVARCHAR(255): Ruta completa del archivo CSV de datos del grupo familiar.
 -- ************************************************************************************************
 
-EXEC sp_configure 'show advanced options', 1; RECONFIGURE;  
+/*EXEC sp_configure 'show advanced options', 1; RECONFIGURE;  
 EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;  
 
 -- ¿Puede verlo el motor?
 EXEC xp_cmdshell 'dir "D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\grupoFamiliar.csv"';
+GO*/
 
 CREATE OR ALTER PROCEDURE socios.importarGrupoFamiliar
-  @FilePath NVARCHAR(255)
+    @FilePath NVARCHAR(255)
 AS
 BEGIN
-  SET NOCOUNT ON;
-
-  IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
-    DROP TABLE #StagingGrupoFamiliar;
-
-  -- 1) Creamos la tabla temporal
-  CREATE TABLE #StagingGrupoFamiliar (
-      [Nro de Socio]                        NVARCHAR(50),
-      [Nro de socio RP]                     NVARCHAR(50),
-      [Nombre]                              NVARCHAR(50),
-      [ apellido]                           NVARCHAR(50),
-      [ DNI]                                NVARCHAR(10),
-      [ email personal]                     NVARCHAR(50),
-      [ fecha de nacimiento]                NVARCHAR(20),
-      [ teléfono de contacto]               NVARCHAR(50),
-      [ teléfono de contacto emergencia]    NVARCHAR(50),
-      [Nombre de la obra social o prepaga]  NVARCHAR(50),
-      [nro. de socio obra social/prepaga ]  NVARCHAR(50),
-      [teléfono de contacto de emergencia ] NVARCHAR(50)
-  );
-
-  BEGIN TRY
-    -- 2) Construimos y ejecutamos la sentencia BULK INSERT en dinámico
-    DECLARE @sql NVARCHAR(MAX) =  
-      N'BULK INSERT #StagingGrupoFamiliar
-        FROM ''' + REPLACE(@FilePath,'''','''''') + N'''
-        WITH
-        (
-          FIRSTROW        = 2,
-          FIELDTERMINATOR = '';'',
-          ROWTERMINATOR   = ''0x0a'',
-          CODEPAGE        = ''65001'',
-          MAXERRORS       = 1000
-        );';
-
-    EXEC sp_executesql @sql;
-
-    -- 3) Ahora hacemos el MERGE contra socios.grupoFamiliar
-    MERGE socios.grupoFamiliar AS Target
-    USING (
-      SELECT
-        CAST(REPLACE([Nro de Socio], 'SN-', '') AS INT)            AS idGrupoFamiliar,
-        CAST(REPLACE([Nro de socio RP], 'SN-', '') AS INT)         AS idSocioResponsable,
-        RTRIM(LTRIM([Nombre]))                                     AS nombre,
-        RTRIM(LTRIM([ apellido]))                                  AS apellido,
-        RTRIM(LTRIM([ DNI]))                                       AS dni,
-        [ email personal]                                          AS emailPersonal,
-        TRY_CONVERT(DATE, [ fecha de nacimiento], 103)             AS fechaNacimiento,
-        [ teléfono de contacto]                                    AS telefonoContacto,
-        [ teléfono de contacto emergencia]                         AS telefonoContactoEmergencia,
-        [Nombre de la obra social o prepaga]                       AS nombreObraSocial,
-        [nro. de socio obra social/prepaga ]                       AS nroSocioObraSocial,
-        [teléfono de contacto de emergencia ]                      AS telefonoObraSocialEmergencia
-      FROM #StagingGrupoFamiliar
-    ) AS Source
-    ON Target.idGrupoFamiliar = Source.idGrupoFamiliar
-    WHEN MATCHED THEN
-      UPDATE SET
-        Target.idSocioResponsable         = Source.idSocioResponsable,
-        Target.nombre                     = Source.nombre,
-        Target.apellido                   = Source.apellido,
-        Target.dni                        = Source.dni,
-        Target.emailPersonal              = Source.emailPersonal,
-        Target.fechaNacimiento            = Source.fechaNacimiento,
-        Target.telefonoContacto           = Source.telefonoContacto,
-        Target.telefonoContactoEmergencia = Source.telefonoContactoEmergencia,
-        Target.nombreObraSocial           = Source.nombreObraSocial,
-        Target.nroSocioObraSocial         = Source.nroSocioObraSocial,
-        Target.telefonoObraSocialEmergencia = Source.telefonoObraSocialEmergencia
-    WHEN NOT MATCHED THEN
-      INSERT (
-        idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni,
-        emailPersonal, fechaNacimiento, telefonoContacto,
-        telefonoContactoEmergencia,
-        nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia
-      )
-      VALUES (
-        Source.idGrupoFamiliar, Source.idSocioResponsable,
-        Source.nombre, Source.apellido, Source.dni,
-        Source.emailPersonal, Source.fechaNacimiento,
-        Source.telefonoContacto,
-        Source.telefonoContactoEmergencia,
-        Source.nombreObraSocial,
-        Source.nroSocioObraSocial,
-        Source.telefonoObraSocialEmergencia
-      );
-
-    PRINT 'Datos de miembros del grupo familiar importados/actualizados con éxito!';
-  END TRY
-  BEGIN CATCH
-    DECLARE 
-      @ErrorMsg NVARCHAR(4000) = ERROR_MESSAGE(),
-      @ErrorSev INT             = ERROR_SEVERITY(),
-      @ErrorState INT           = ERROR_STATE();
-    RAISERROR(@ErrorMsg, @ErrorSev, @ErrorState);
-  END CATCH;
-
-  DROP TABLE IF EXISTS #StagingGrupoFamiliar;
+    SET NOCOUNT ON;
+    IF OBJECT_ID('tempdb..#StagingGrupoFamiliar') IS NOT NULL
+        DROP TABLE #StagingGrupoFamiliar;
+    -- 1) Creamos la tabla temporal
+    CREATE TABLE #StagingGrupoFamiliar (
+        [Nro de Socio]                       NVARCHAR(50),
+        [Nro de socio RP]                    NVARCHAR(50),
+        [Nombre]                             NVARCHAR(50),
+        [ apellido]                          NVARCHAR(50),
+        [ DNI]                               NVARCHAR(10),
+        [ email personal]                    NVARCHAR(50),
+        [ fecha de nacimiento]               NVARCHAR(20),
+        [ teléfono de contacto]              NVARCHAR(50),
+        [ teléfono de contacto emergencia]    NVARCHAR(50),
+        [Nombre de la obra social o prepaga] NVARCHAR(50),
+        [nro. de socio obra social/prepaga ] NVARCHAR(50),
+        [teléfono de contacto de emergencia ] NVARCHAR(50)
+    );
+    BEGIN TRY
+        -- 2) Construimos y ejecutamos la sentencia BULK INSERT en dinámico
+        DECLARE @sql NVARCHAR(MAX) = 
+            N'BULK INSERT #StagingGrupoFamiliar
+              FROM ''' + REPLACE(@FilePath,'''','''''') + N'''
+              WITH
+              (
+                FIRSTROW        = 2,
+                FIELDTERMINATOR = '';'',
+                ROWTERMINATOR   = ''0x0a'',
+                CODEPAGE        = ''65001'',
+                MAXERRORS       = 1000
+              );';
+        EXEC sp_executesql @sql;
+        -- 3) Ahora hacemos el MERGE contra socios.grupoFamiliar
+        MERGE socios.grupoFamiliar AS Target
+        USING (
+            SELECT
+                CAST(REPLACE([Nro de Socio], 'SN-', '') AS INT)             AS idGrupoFamiliar,
+                CAST(REPLACE([Nro de socio RP], 'SN-', '') AS INT)          AS idSocioResponsable,
+                RTRIM(LTRIM([Nombre]))                                      AS nombre,
+                RTRIM(LTRIM([ apellido]))                                   AS apellido,
+                RTRIM(LTRIM([ DNI]))                                        AS dni,
+                [ email personal]                                           AS emailPersonal,
+                TRY_CONVERT(DATE, [ fecha de nacimiento], 103)              AS fechaNacimiento,
+                [ teléfono de contacto]                                     AS telefonoContacto,
+                [ teléfono de contacto emergencia]                           AS telefonoContactoEmergencia,
+                [Nombre de la obra social o prepaga]                        AS nombreObraSocial,
+                [nro. de socio obra social/prepaga ]                        AS nroSocioObraSocial,
+                [teléfono de contacto de emergencia ]                       AS telefonoObraSocialEmergencia
+            FROM #StagingGrupoFamiliar
+        ) AS Source
+        ON Target.idGrupoFamiliar = Source.idGrupoFamiliar
+        WHEN MATCHED THEN
+            UPDATE SET
+                Target.idSocioResponsable           = Source.idSocioResponsable,
+                Target.nombre                       = Source.nombre,
+                Target.apellido                     = Source.apellido,
+                Target.dni                          = Source.dni,
+                Target.emailPersonal                = Source.emailPersonal,
+                Target.fechaNacimiento              = Source.fechaNacimiento,
+                Target.telefonoContacto             = Source.telefonoContacto,
+                Target.telefonoContactoEmergencia   = Source.telefonoContactoEmergencia,
+                Target.nombreObraSocial             = Source.nombreObraSocial,
+                Target.nroSocioObraSocial           = Source.nroSocioObraSocial,
+                Target.telefonoObraSocialEmergencia = Source.telefonoObraSocialEmergencia
+        WHEN NOT MATCHED THEN
+            INSERT (
+                idGrupoFamiliar, idSocioResponsable, nombre, apellido, dni,
+                emailPersonal, fechaNacimiento, telefonoContacto,
+                telefonoContactoEmergencia,
+                nombreObraSocial, nroSocioObraSocial, telefonoObraSocialEmergencia
+            )
+            VALUES (
+                Source.idGrupoFamiliar, Source.idSocioResponsable,
+                Source.nombre, Source.apellido, Source.dni,
+                Source.emailPersonal, Source.fechaNacimiento,
+                Source.telefonoContacto,
+                Source.telefonoContactoEmergencia,
+                Source.nombreObraSocial,
+                Source.nroSocioObraSocial,
+                Source.telefonoObraSocialEmergencia
+            );
+        PRINT 'Datos de miembros del grupo familiar importados/actualizados con éxito!';
+    END TRY
+    BEGIN CATCH
+        DECLARE 
+            @ErrorMsg NVARCHAR(4000) = ERROR_MESSAGE(),
+            @ErrorSev INT             = ERROR_SEVERITY(),
+            @ErrorState INT           = ERROR_STATE();
+        RAISERROR(@ErrorMsg, @ErrorSev, @ErrorState);
+    END CATCH;
+    DROP TABLE IF EXISTS #StagingGrupoFamiliar;
 END;
 GO
 
 -- CARGAR DATOS DEL CSV
 EXEC socios.importarGrupoFamiliar
-  @FilePath = N'C:\Importar\dataImport\grupoFamiliar.csv';
+  @FilePath = N'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\grupoFamiliar.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -667,8 +663,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
     DECLARE @DynamicSql NVARCHAR(MAX);
-
-    -- Limpiar tablas temporales si existen de una ejecución anterior
     IF OBJECT_ID('tempdb..#StagingPagosCuotas') IS NOT NULL
         DROP TABLE #StagingPagosCuotas;
     IF OBJECT_ID('tempdb..#ProcessedCobros') IS NOT NULL
@@ -691,15 +685,11 @@ BEGIN
                                  FIELDTERMINATOR = '';'', -- Separador de columnas
                                  ROWTERMINATOR = ''0x0d0a'', -- CRLF para Windows
                                  TABLOCK                     
-                             );';
-        
+                             );';      
         EXEC sp_executesql @DynamicSql;
         PRINT '--- Depuración: Después de BULK INSERT ---';
         SELECT COUNT(*) AS 'Count_StagingPagosCuotas' FROM #StagingPagosCuotas;
-        --SELECT TOP 10 * FROM #StagingPagosCuotas;
-		--SELECT * FROM #StagingPagosCuotas;
         PRINT '-----------------------------------------';
-
         CREATE TABLE #ProcessedCobros (
             idCobro BIGINT PRIMARY KEY,
             idSocio INT,
@@ -713,7 +703,6 @@ BEGIN
             numeroCuota INT,
             totalAbonado DECIMAL(10, 2)
         );
-
         INSERT INTO #ProcessedCobros (
             idCobro, idSocio, categoriaSocio, fechaEmisionCobro, 
             nombreSocio, apellidoSocio, cuilDeudor, domicilio, 
@@ -786,7 +775,6 @@ BEGIN
                 Source.nombreSocio, Source.apellidoSocio, Source.cuilDeudor, Source.domicilio,
                 Source.modalidadCobro, Source.numeroCuota, Source.totalAbonado, NULL
             );
-
         PRINT '¡Datos de pagos de cuotas importados/actualizados con exito!';
     END TRY
     BEGIN CATCH
@@ -804,7 +792,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC pagos.importarPagosCuotas
-	@FilePath = 'C:\Importar\dataImport\pagoCuotas.csv';
+	@FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\pagoCuotas.csv';
 GO
 
 -- VER DATOS CARGADOS
@@ -850,9 +838,8 @@ BEGIN
         EXEC sp_executesql @consultaSqlDinamica;
         PRINT 'BULK INSERT completado. Filas cargadas en #TablaDeCargaTemporal: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
         -- Depuración: Mostrar algunas filas de la tabla temporal
-        PRINT 'Top 10 filas de #TablaDeCargaTemporal:';
-        SELECT TOP 10 * FROM #TablaDeCargaTemporal;
-
+        -- PRINT 'Top 10 filas de #TablaDeCargaTemporal:';
+        -- SELECT TOP 10 * FROM #TablaDeCargaTemporal;
         -- MERGE para insertar/actualizar datos en actividades.presentismoActividadSocio
         MERGE actividades.presentismoActividadSocio AS TablaDestino
         USING (
@@ -881,9 +868,7 @@ BEGIN
         WHEN NOT MATCHED THEN
             INSERT (idSocio, idDeporteActivo, fechaActividad, estadoPresentismo, profesorDeporte)
             VALUES (TablaOrigen.idSocio, TablaOrigen.idDeporteActivo, TablaOrigen.fechaActividad, TablaOrigen.estadoPresentismo, TablaOrigen.profesorDeporte);
-
         PRINT 'Proceso de importacion de presentismo completado con exito!';
-        --PRINT 'Filas afectadas por MERGE: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
     END TRY
     BEGIN CATCH
         DECLARE @MensajeError NVARCHAR(MAX) = ERROR_MESSAGE();
@@ -898,7 +883,7 @@ GO
 
 -- CARGAR DATOS DEL CSV
 EXEC actividades.importarPresentismoActividadSocio
-    @FilePath = 'C:\Importar\dataImport\presentismo_actividades.csv';
+    @FilePath = 'D:\Lautaro_Santillan\UNLaM\Bases de Datos Aplicada\SolNorte-Grupo3-BDDA\SOLNORTE-GRUPO3-BDDA\dataImport\presentismoActividades.csv';
 GO
 
 -- VER DATOS CARGADOS

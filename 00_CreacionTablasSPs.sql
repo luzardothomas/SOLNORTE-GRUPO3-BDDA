@@ -123,7 +123,6 @@ CREATE TABLE coberturas.coberturaDisponible (
 GO
 
 -- 1.10 socios.ingresoSocio
-
 CREATE TABLE socios.ingresoSocio (
 	idSocio INT PRIMARY KEY IDENTITY (1,1),
 	fechaIngreso DATE,
@@ -172,8 +171,7 @@ CREATE TABLE socios.saldoAFavorSocio (
 	FOREIGN KEY (idSocio) REFERENCES socios.socio(idSocio)
 );
 
-
---2.4 socios.grupoFamiliarSocio
+--2.4 socios.grupoFamiliar
 CREATE TABLE socios.grupoFamiliar (
     idGrupoFamiliar INT PRIMARY KEY,
     idSocioResponsable INT NOT NULL,
@@ -186,11 +184,10 @@ CREATE TABLE socios.grupoFamiliar (
     telefonoContactoEmergencia VARCHAR(20) NULL,
     nombreObraSocial VARCHAR(50) NULL,
     nroSocioObraSocial VARCHAR(50) NULL,
-    telefonoObraSocialEmergencia VARCHAR(14) NULL
+    telefonoObraSocialEmergencia VARCHAR(30) NULL
 	FOREIGN KEY (idSocioResponsable) REFERENCES socios.socio(idSocio)
 );
 GO
-
 
 -- 3. Tablas con dependencias de segundo nivel
 
@@ -272,6 +269,7 @@ CREATE TABLE pagos.facturaEmitida (
 );
 GO
 
+-- 3.7 pagos.cuerpoFactura
 CREATE TABLE pagos.cuerpoFactura (
 	idFactura INT,
 	idItemFactura INT NOT NULL, 
@@ -282,7 +280,7 @@ CREATE TABLE pagos.cuerpoFactura (
 	FOREIGN KEY (idFactura) REFERENCES pagos.facturaEmitida(idFactura)
 )
 
--- 3.7 pagos.cobroFactura
+-- 3.8 pagos.cobroFactura
 CREATE TABLE pagos.cobroFactura (
     idCobro BIGINT PRIMARY KEY,
     idFacturaCobrada INT NULL,
@@ -301,7 +299,7 @@ CREATE TABLE pagos.cobroFactura (
 );
 GO
 
--- 3.8 pagos.cuerpoCobro
+-- 3.9 pagos.cuerpoCobro
 CREATE TABLE pagos.cuerpoCobro (
     idCobro BIGINT NOT NULL,
     idFactura INT NOT NULL, -- Asumo que esto se refiere a idFacturaCobrada en cobroFactura
@@ -314,7 +312,7 @@ CREATE TABLE pagos.cuerpoCobro (
 );
 GO
 
--- 3.9 descuentos.descuentoVigente
+-- 3.10 descuentos.descuentoVigente
 CREATE TABLE descuentos.descuentoVigente (
     idDescuento INT,
     idSocio INT,
@@ -324,7 +322,7 @@ CREATE TABLE descuentos.descuentoVigente (
 );
 GO
 
--- 3.10 itinerarios.itinerario
+-- 3.11 itinerarios.itinerario
 CREATE TABLE itinerarios.itinerario (
     idItinerario INT PRIMARY KEY IDENTITY(1,1),
     dia VARCHAR(9) NOT NULL,
@@ -335,7 +333,7 @@ CREATE TABLE itinerarios.itinerario (
 );
 GO
 
--- 3.11 coberturas.prepagaEnUso
+-- 3.12 coberturas.prepagaEnUso
 CREATE TABLE coberturas.prepagaEnUso (
     idPrepaga INT PRIMARY KEY IDENTITY(1,1),
     idCobertura INT NOT NULL,
@@ -347,7 +345,7 @@ CREATE TABLE coberturas.prepagaEnUso (
 );
 GO
 
--- 3.12 reservas.reservaSum 
+-- 3.13 reservas.reservaSum 
 CREATE TABLE reservas.reservaSUM (
 	idReserva INT IDENTITY(1,1),
 	idSocio INT NOT NULL CHECK (idSocio >= 0), -- Porque si no es socio y es Invitado, iria 0
@@ -363,7 +361,7 @@ CREATE TABLE reservas.reservaSUM (
 );
 GO
 
--- 3.13 reservas.reservaPaseActividad
+-- 3.14 reservas.reservaPaseActividad
 CREATE TABLE reservas.reservaPaseActividad (
 	idReservaActividad INT IDENTITY (1,1),
 	idSocio INT NOT NULL CHECK (idSocio >= 0), -- Porque si no es socio y es Invitado, iria 0
@@ -375,7 +373,7 @@ CREATE TABLE reservas.reservaPaseActividad (
 );
 GO
 
--- 3.14 pagos.reembolso
+-- 3.15 pagos.reembolso
 CREATE TABLE pagos.reembolso (
     idFacturaReembolso INT NOT NULL IDENTITY(1,1),
     idCobroOriginal BIGINT NOT NULL,
@@ -392,7 +390,7 @@ CREATE TABLE pagos.reembolso (
 );
 GO
 
--- 3.15 actividades.presentismoActividadSocio
+-- 3.16 actividades.presentismoActividadSocio
 CREATE TABLE actividades.presentismoActividadSocio (
     idSocio INT NOT NULL,
     idDeporteActivo INT NOT NULL,
@@ -530,7 +528,414 @@ BEGIN
 END;
 GO
 
---socio
+-- *************************************************************************
+-- Aca van los SPs que despues se haran referencia en "registrarNuevoSocio"
+-- *************************************************************************
+CREATE OR ALTER PROCEDURE pagos.insertarFacturaActiva
+  @idSocio          INT,
+  @categoriaSocio   INT,
+  @newFacturaId     INT OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  DECLARE @hoy DATE = CAST(GETDATE() AS DATE);
+
+  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+     OR NOT EXISTS (
+       SELECT 1 FROM socios.categoriaMembresiaSocio
+       WHERE idCategoria = @categoriaSocio AND estadoCategoriaSocio = 1)
+    THROW 60001,'Socio o categoría no válidos.',1;
+
+  INSERT INTO pagos.facturaActiva
+    (idSocio,categoriaSocio,estadoFactura,fechaEmision,
+     fechaPrimerVencimiento,fechaSegundoVencimiento)
+  VALUES
+    (@idSocio,@categoriaSocio,'Pendiente',
+     @hoy, DATEADD(DAY,5,@hoy), DATEADD(DAY,10,@hoy));
+
+  SET @newFacturaId = SCOPE_IDENTITY();
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.emitirFactura
+  @idFactura         INT,
+  @cuilDeudor        VARCHAR(13),
+  @domicilio         VARCHAR(35),
+  @modalidadCobro    VARCHAR(25)  -- e.g. 'Contado' o 'Cuotas:6'
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- 1) Validar existencia y estado de la factura activa
+    DECLARE @estadoActiva VARCHAR(15);
+    SELECT @estadoActiva = estadoFactura
+      FROM pagos.facturaActiva
+     WHERE idFactura = @idFactura;
+
+    IF @estadoActiva IS NULL
+      THROW 60010, 'Factura activa no encontrada.', 1;
+    IF @estadoActiva <> 'Pendiente'
+      THROW 60011, 'Solo se puede emitir una factura pendiente.', 1;
+
+    -- 2) Validar CUIL
+    IF socios.validarCUIL(@cuilDeudor) = 0
+      THROW 60012, 'CUIL inválido.', 1;
+
+    -- 3) Obtener nombre y apellido del socio
+    DECLARE @nombreSocio VARCHAR(50), @apellidoSocio VARCHAR(50);
+    SELECT @nombreSocio = nombre, @apellidoSocio = apellido
+      FROM socios.socio
+     WHERE idSocio = (
+       SELECT idSocio FROM pagos.facturaActiva WHERE idFactura = @idFactura
+     );
+
+    -- 4) Insertar en facturaEmitida con importes en cero
+    INSERT INTO pagos.facturaEmitida (
+      idFactura,
+      nombreSocio,
+      apellidoSocio,
+      fechaEmision,
+      cuilDeudor,
+      domicilio,
+      modalidadCobro,
+      importeBruto,
+      importeTotal
+    )
+    VALUES (
+      @idFactura,
+      @nombreSocio,
+      @apellidoSocio,
+      GETDATE(),
+      @cuilDeudor,
+      @domicilio,
+      @modalidadCobro,
+      0.00,    -- se inicializa en cero
+      0.00     -- se inicializa en cero
+    );
+
+    -- 5) Marcar activa como emitida (Pagada)
+    UPDATE pagos.facturaActiva
+    SET estadoFactura = 'Pagada'
+    WHERE idFactura = @idFactura;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE pagos.insertarCuerpoFactura
+  @idFactura        INT,
+  @tipoItem         VARCHAR(20),
+  @descripcionItem  VARCHAR(25),
+  @importeItem      DECIMAL(10,2)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- 0) Aplicar descuentos según tipo de ítem
+    IF UPPER(@tipoItem) = 'MEMBRESIA'
+    BEGIN
+      -- 15% de descuento en membresía
+      SET @importeItem = ROUND(@importeItem * 0.85, 2);
+    END
+
+    -- 1) Validar existencia de factura emitida
+    IF NOT EXISTS (SELECT 1 FROM pagos.facturaEmitida WHERE idFactura = @idFactura)
+      THROW 61001, 'Factura no encontrada.', 1;
+
+    -- 2) Generar nuevo idItemFactura
+    DECLARE @newItem INT;
+    SELECT @newItem = COALESCE(MAX(idItemFactura), 0) + 1
+      FROM pagos.cuerpoFactura
+     WHERE idFactura = @idFactura;
+
+    -- 3) Insertar ítem
+    INSERT INTO pagos.cuerpoFactura (
+      idFactura, idItemFactura, tipoItem, descripcionItem, importeItem
+    ) VALUES (
+      @idFactura, @newItem, @tipoItem, @descripcionItem, @importeItem
+    );
+
+    -- 4) Si es deporte, verificar número de deportes para descuento adicional
+    IF UPPER(@tipoItem) = 'DEPORTE'
+    BEGIN
+      DECLARE @countDeporte INT;
+      SELECT @countDeporte = COUNT(*)
+        FROM pagos.cuerpoFactura
+       WHERE idFactura = @idFactura
+         AND UPPER(tipoItem) = 'DEPORTE';
+      IF @countDeporte > 1
+      BEGIN
+        -- Aplicar 10% de descuento a todos los deportes
+        UPDATE pagos.cuerpoFactura
+        SET importeItem = ROUND(importeItem * 0.90, 2)
+        WHERE idFactura = @idFactura
+          AND UPPER(tipoItem) = 'DEPORTE';
+      END
+    END
+
+    -- 5) Ajuste de saldo o importes generales
+    DECLARE @idSocio INT, @saldo DECIMAL(10,2);
+    SELECT @idSocio = fa.idSocio
+      FROM pagos.facturaActiva fa
+     WHERE fa.idFactura = @idFactura;
+
+    SELECT @saldo = saldoTotal
+      FROM socios.saldoAFavorSocio
+     WHERE idSocio = @idSocio;
+
+    IF @saldo >= @importeItem
+    BEGIN
+      -- Descontar del saldo a favor
+      UPDATE socios.saldoAFavorSocio
+      SET saldoTotal = saldoTotal - @importeItem
+      WHERE idSocio = @idSocio;
+    END
+    ELSE
+    BEGIN
+      -- Acumular al importe bruto
+      UPDATE pagos.facturaEmitida
+      SET importeBruto = importeBruto + @importeItem
+      WHERE idFactura = @idFactura;
+
+      UPDATE pagos.facturaEmitida
+      SET importeTotal = importeBruto
+      WHERE idFactura = @idFactura;
+    END
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE actividades.insertarDeporteActivo
+  @idSocio INT,
+  @idDeporte INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRY
+    -- Validar existencia y membresía activa del socio
+    DECLARE @estadoMembresia VARCHAR(22);
+
+    SELECT @estadoMembresia = estadoMorosidadMembresia
+    FROM socios.estadoMembresiaSocio
+    WHERE idSocio = @idSocio;
+
+    IF @estadoMembresia <> 'Activo'
+      THROW 50011, 'El socio no tiene una membresía activa.', 1;
+
+    -- Verificar que el deporte exista
+	IF NOT EXISTS (
+	  SELECT 1
+		FROM actividades.deporteDisponible
+	   WHERE idDeporte = @idDeporte
+		 AND vigenciaHasta >= CAST(GETDATE() AS DATE)
+	)
+	  THROW 50012, 'El deporte especificado no existe o está vencido.', 1;
+
+    -- Insertar actividad deportiva activa
+    INSERT INTO actividades.deporteActivo (
+      idSocio, idDeporte, estadoActividadDeporte, estadoMembresia
+    )
+    VALUES (
+      @idSocio, @idDeporte, 'Activo', @estadoMembresia
+    );
+  END TRY
+  BEGIN CATCH
+    THROW;
+  END CATCH
+END;
+GO
+
+CREATE OR ALTER PROCEDURE socios.insertarRolVigente
+  @idRol INT,
+  @idSocio INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF NOT EXISTS (SELECT 1 FROM socios.rolDisponible WHERE idRol = @idRol)
+  BEGIN
+    THROW 51001, 'El ID de rol especificado no existe.', 1;
+  END
+
+  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
+  BEGIN
+    THROW 51002, 'El ID de socio especificado no existe.', 1;
+  END
+
+  IF EXISTS (
+    SELECT 1 FROM socios.rolVigente 
+    WHERE idRol = @idRol AND idSocio = @idSocio
+  )
+  BEGIN
+    THROW 51003, 'Ya existe una relación entre este rol y socio.', 1;
+  END
+
+  INSERT INTO socios.rolVigente (idRol, idSocio, estadoRolVigente)
+  VALUES (@idRol, @idSocio, 1);
+
+  PRINT 'Rol asignado correctamente.';
+END;
+GO
+
+CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliar
+  @idGrupoFamiliar                   INT,
+  @idSocioResponsable                INT,
+  @nombre                            VARCHAR(50),
+  @apellido                          VARCHAR(50),
+  @dni                               VARCHAR(10),
+  @emailPersonal                     VARCHAR(50)    = NULL,
+  @fechaNacimiento                   DATE           = NULL,
+  @telefonoContacto                  VARCHAR(20)    = NULL,
+  @telefonoContactoEmergencia        VARCHAR(20)    = NULL,
+  @nombreObraSocial                  VARCHAR(50)    = NULL,
+  @nroSocioObraSocial                VARCHAR(50)    = NULL,
+  @telefonoObraSocialEmergencia      VARCHAR(50)    = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  ---------------------------------------------------
+  -- 1) Validar socio responsable
+  ---------------------------------------------------
+  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocioResponsable)
+    THROW 51001, 'Socio responsable no encontrado.', 1;
+
+  ---------------------------------------------------
+  -- 2) PK no duplicada
+  ---------------------------------------------------
+  IF EXISTS (SELECT 1 FROM socios.grupoFamiliar WHERE idGrupoFamiliar = @idGrupoFamiliar)
+    THROW 51002, 'Ya existe un grupo con ese ID.', 1;
+
+  ---------------------------------------------------
+  -- 3) DNI único dentro del grupo
+  ---------------------------------------------------
+  IF EXISTS (SELECT 1 FROM socios.grupoFamiliar WHERE dni = @dni)
+    THROW 51003, 'El DNI ya está registrado en otro miembro del grupo.', 1;
+
+  ---------------------------------------------------
+  -- 4) Insertar miembro
+  ---------------------------------------------------
+  INSERT INTO socios.grupoFamiliar (
+    idGrupoFamiliar,
+    idSocioResponsable,
+    nombre,
+    apellido,
+    dni,
+    emailPersonal,
+    fechaNacimiento,
+    telefonoContacto,
+    telefonoContactoEmergencia,
+    nombreObraSocial,
+    nroSocioObraSocial,
+    telefonoObraSocialEmergencia
+  )
+  VALUES (
+    @idGrupoFamiliar,
+    @idSocioResponsable,
+    @nombre,
+    @apellido,
+    @dni,
+    @emailPersonal,
+    @fechaNacimiento,
+    @telefonoContacto,
+    @telefonoContactoEmergencia,
+    @nombreObraSocial,
+    @nroSocioObraSocial,
+    @telefonoObraSocialEmergencia
+  );
+
+  ---------------------------------------------------
+  -- 5) Asegurar existencia de "DESCUENTO GRUPO FAMILIAR"
+  ---------------------------------------------------
+  DECLARE @idDescuento INT;
+
+  SELECT @idDescuento = idDescuento
+    FROM descuentos.descuentoDisponible
+   WHERE tipo = 'DESCUENTO GRUPO FAMILIAR'
+     AND estadoDescuento = 1;
+
+  IF @idDescuento IS NULL
+  BEGIN
+    -- Si no existe, lo creamos con un 5% como ejemplo
+    INSERT INTO descuentos.descuentoDisponible (tipo, porcentajeDescontado, estadoDescuento)
+     VALUES ('DESCUENTO GRUPO FAMILIAR', 15.00, 1);
+
+    SET @idDescuento = SCOPE_IDENTITY();
+  END
+
+  ---------------------------------------------------
+  -- 6) Insertar en descuentoVigente (si aún no existe)
+  ---------------------------------------------------
+  IF NOT EXISTS (
+    SELECT 1 FROM descuentos.descuentoVigente
+    WHERE idDescuento = @idDescuento
+      AND idSocio = @idSocioResponsable
+  )
+  BEGIN
+    INSERT INTO descuentos.descuentoVigente (idDescuento, idSocio)
+    VALUES (@idDescuento, @idSocioResponsable);
+  END
+END;
+GO
+
+CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliarActivo
+  @idSocio INT,
+  @idGrupoFamiliar INT,
+  @parentescoGrupoFamiliar VARCHAR(5)
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM socios.socio WHERE idSocio = @idSocio
+  )
+  BEGIN
+    THROW 50010, 'El socio especificado no existe.', 1;
+  END
+
+  IF NOT EXISTS (
+    SELECT 1 FROM socios.grupoFamiliar WHERE idGrupoFamiliar = @idGrupoFamiliar
+  )
+  BEGIN
+    THROW 50011, 'El grupo familiar especificado no existe.', 1;
+  END
+
+  IF @parentescoGrupoFamiliar NOT IN ('Tutor', 'Menor')
+  BEGIN
+    THROW 50012, 'Parentesco no válido. Debe ser "Tutor" o "Menor".', 1;
+  END
+
+  INSERT INTO socios.grupoFamiliarActivo (
+    idSocio,
+    idGrupoFamiliar,
+    parentescoGrupoFamiliar,
+    estadoGrupoActivo
+  )
+  VALUES (
+    @idSocio,
+    @idGrupoFamiliar,
+    @parentescoGrupoFamiliar,
+    1
+  );
+END
+GO
+
+-- Socio
+-- ************************
+-- SP: registrarNuevoSocio
+-- ************************
 CREATE OR ALTER PROCEDURE socios.registrarNuevoSocio
   @fechaIngreso           DATE,
   @primerUsuario          VARCHAR(50),
@@ -982,40 +1387,7 @@ BEGIN
 END;
 GO
 
---rolVigente
-
-CREATE OR ALTER PROCEDURE socios.insertarRolVigente
-  @idRol INT,
-  @idSocio INT
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  IF NOT EXISTS (SELECT 1 FROM socios.rolDisponible WHERE idRol = @idRol)
-  BEGIN
-    THROW 51001, 'El ID de rol especificado no existe.', 1;
-  END
-
-  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
-  BEGIN
-    THROW 51002, 'El ID de socio especificado no existe.', 1;
-  END
-
-  IF EXISTS (
-    SELECT 1 FROM socios.rolVigente 
-    WHERE idRol = @idRol AND idSocio = @idSocio
-  )
-  BEGIN
-    THROW 51003, 'Ya existe una relación entre este rol y socio.', 1;
-  END
-
-  INSERT INTO socios.rolVigente (idRol, idSocio, estadoRolVigente)
-  VALUES (@idRol, @idSocio, 1);
-
-  PRINT 'Rol asignado correctamente.';
-END;
-GO
-
+-- rolVigente
 CREATE OR ALTER PROCEDURE socios.actualizarEstadoRolVigente
   @idRol INT,
   @idSocio INT,
@@ -1053,110 +1425,7 @@ BEGIN
 END;
 GO
 
-
---grupoFamiliar
-
-CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliar
-  @idGrupoFamiliar                   INT,
-  @idSocioResponsable                INT,
-  @nombre                            VARCHAR(50),
-  @apellido                          VARCHAR(50),
-  @dni                               VARCHAR(10),
-  @emailPersonal                     VARCHAR(50)    = NULL,
-  @fechaNacimiento                   DATE           = NULL,
-  @telefonoContacto                  VARCHAR(20)    = NULL,
-  @telefonoContactoEmergencia        VARCHAR(20)    = NULL,
-  @nombreObraSocial                  VARCHAR(50)    = NULL,
-  @nroSocioObraSocial                VARCHAR(50)    = NULL,
-  @telefonoObraSocialEmergencia      VARCHAR(50)    = NULL
-AS
-BEGIN
-  SET NOCOUNT ON;
-  ---------------------------------------------------
-  -- 1) Validar socio responsable
-  ---------------------------------------------------
-  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocioResponsable)
-    THROW 51001, 'Socio responsable no encontrado.', 1;
-
-  ---------------------------------------------------
-  -- 2) PK no duplicada
-  ---------------------------------------------------
-  IF EXISTS (SELECT 1 FROM socios.grupoFamiliar WHERE idGrupoFamiliar = @idGrupoFamiliar)
-    THROW 51002, 'Ya existe un grupo con ese ID.', 1;
-
-  ---------------------------------------------------
-  -- 3) DNI único dentro del grupo
-  ---------------------------------------------------
-  IF EXISTS (SELECT 1 FROM socios.grupoFamiliar WHERE dni = @dni)
-    THROW 51003, 'El DNI ya está registrado en otro miembro del grupo.', 1;
-
-  ---------------------------------------------------
-  -- 4) Insertar miembro
-  ---------------------------------------------------
-  INSERT INTO socios.grupoFamiliar (
-    idGrupoFamiliar,
-    idSocioResponsable,
-    nombre,
-    apellido,
-    dni,
-    emailPersonal,
-    fechaNacimiento,
-    telefonoContacto,
-    telefonoContactoEmergencia,
-    nombreObraSocial,
-    nroSocioObraSocial,
-    telefonoObraSocialEmergencia
-  )
-  VALUES (
-    @idGrupoFamiliar,
-    @idSocioResponsable,
-    @nombre,
-    @apellido,
-    @dni,
-    @emailPersonal,
-    @fechaNacimiento,
-    @telefonoContacto,
-    @telefonoContactoEmergencia,
-    @nombreObraSocial,
-    @nroSocioObraSocial,
-    @telefonoObraSocialEmergencia
-  );
-
-  ---------------------------------------------------
-  -- 5) Asegurar existencia de "DESCUENTO GRUPO FAMILIAR"
-  ---------------------------------------------------
-  DECLARE @idDescuento INT;
-
-  SELECT @idDescuento = idDescuento
-    FROM descuentos.descuentoDisponible
-   WHERE tipo = 'DESCUENTO GRUPO FAMILIAR'
-     AND estadoDescuento = 1;
-
-  IF @idDescuento IS NULL
-  BEGIN
-    -- Si no existe, lo creamos con un 5% como ejemplo
-    INSERT INTO descuentos.descuentoDisponible (tipo, porcentajeDescontado, estadoDescuento)
-     VALUES ('DESCUENTO GRUPO FAMILIAR', 15.00, 1);
-
-    SET @idDescuento = SCOPE_IDENTITY();
-  END
-
-  ---------------------------------------------------
-  -- 6) Insertar en descuentoVigente (si aún no existe)
-  ---------------------------------------------------
-  IF NOT EXISTS (
-    SELECT 1 FROM descuentos.descuentoVigente
-    WHERE idDescuento = @idDescuento
-      AND idSocio = @idSocioResponsable
-  )
-  BEGIN
-    INSERT INTO descuentos.descuentoVigente (idDescuento, idSocio)
-    VALUES (@idDescuento, @idSocioResponsable);
-  END
-END;
-GO
-
-
+-- grupoFamiliar
 
 -- ===============================================
 -- Actualiza los datos de un miembro de grupo familiar
@@ -1231,51 +1500,6 @@ BEGIN
 END;
 GO
 
-
-
-CREATE OR ALTER PROCEDURE socios.insertarGrupoFamiliarActivo
-  @idSocio INT,
-  @idGrupoFamiliar INT,
-  @parentescoGrupoFamiliar VARCHAR(5)
-AS
-BEGIN
-  SET NOCOUNT ON;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM socios.socio WHERE idSocio = @idSocio
-  )
-  BEGIN
-    THROW 50010, 'El socio especificado no existe.', 1;
-  END
-
-  IF NOT EXISTS (
-    SELECT 1 FROM socios.grupoFamiliar WHERE idGrupoFamiliar = @idGrupoFamiliar
-  )
-  BEGIN
-    THROW 50011, 'El grupo familiar especificado no existe.', 1;
-  END
-
-  IF @parentescoGrupoFamiliar NOT IN ('Tutor', 'Menor')
-  BEGIN
-    THROW 50012, 'Parentesco no válido. Debe ser "Tutor" o "Menor".', 1;
-  END
-
-  INSERT INTO socios.grupoFamiliarActivo (
-    idSocio,
-    idGrupoFamiliar,
-    parentescoGrupoFamiliar,
-    estadoGrupoActivo
-  )
-  VALUES (
-    @idSocio,
-    @idGrupoFamiliar,
-    @parentescoGrupoFamiliar,
-    1
-  );
-END
-GO
-
-
 CREATE OR ALTER PROCEDURE socios.obtenerGrupoFamiliarDeSocio
   @idSocio INT
 AS
@@ -1326,7 +1550,6 @@ END;
 GO
 
 --deporteDisponible
-
 CREATE OR ALTER PROCEDURE actividades.insertarDeporteDisponible
   @descripcion   VARCHAR(20),
   @tipo          VARCHAR(10),
@@ -1396,49 +1619,7 @@ BEGIN
 END
 GO
 
---deporteActivo
-
-CREATE OR ALTER PROCEDURE actividades.insertarDeporteActivo
-  @idSocio INT,
-  @idDeporte INT
-AS
-BEGIN
-  SET NOCOUNT ON;
-  BEGIN TRY
-    -- Validar existencia y membresía activa del socio
-    DECLARE @estadoMembresia VARCHAR(22);
-
-    SELECT @estadoMembresia = estadoMorosidadMembresia
-    FROM socios.estadoMembresiaSocio
-    WHERE idSocio = @idSocio;
-
-    IF @estadoMembresia <> 'Activo'
-      THROW 50011, 'El socio no tiene una membresía activa.', 1;
-
-    -- Verificar que el deporte exista
-	IF NOT EXISTS (
-	  SELECT 1
-		FROM actividades.deporteDisponible
-	   WHERE idDeporte = @idDeporte
-		 AND vigenciaHasta >= CAST(GETDATE() AS DATE)
-	)
-	  THROW 50012, 'El deporte especificado no existe o está vencido.', 1;
-
-    -- Insertar actividad deportiva activa
-    INSERT INTO actividades.deporteActivo (
-      idSocio, idDeporte, estadoActividadDeporte, estadoMembresia
-    )
-    VALUES (
-      @idSocio, @idDeporte, 'Activo', @estadoMembresia
-    );
-  END TRY
-  BEGIN CATCH
-    THROW;
-  END CATCH
-END;
-GO
-
-
+-- deporteActivo
 CREATE OR ALTER PROCEDURE actividades.obtenerDeportesDeSocio
   @idSocio INT
 AS
@@ -1451,7 +1632,6 @@ BEGIN
   WHERE da.idSocio = @idSocio;
 END;
 GO
-
 
 CREATE OR ALTER PROCEDURE actividades.borrarLogicamenteDeporteActivo
   @idDeporteActivo INT
@@ -1482,7 +1662,6 @@ BEGIN
   END CATCH
 END;
 GO
-
 
 --actividadPileta
 CREATE OR ALTER PROCEDURE actividades.insertarActividadPileta
@@ -1565,9 +1744,9 @@ BEGIN
 END;
 GO
 
--- ===============================================
+-- =================================================
 -- Procedure: Actualizar tarifa de actividad pileta
--- ===============================================
+-- =================================================
 CREATE OR ALTER PROCEDURE actividades.actualizarActividadPileta
   @idActividad                    INT,
   @tarifaSocioPorDiaAdulto        DECIMAL(10,2)    = NULL,
@@ -1939,32 +2118,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE pagos.insertarFacturaActiva
-  @idSocio          INT,
-  @categoriaSocio   INT,
-  @newFacturaId     INT OUTPUT
-AS
-BEGIN
-  SET NOCOUNT ON;
-  DECLARE @hoy DATE = CAST(GETDATE() AS DATE);
-
-  IF NOT EXISTS (SELECT 1 FROM socios.socio WHERE idSocio = @idSocio)
-     OR NOT EXISTS (
-       SELECT 1 FROM socios.categoriaMembresiaSocio
-       WHERE idCategoria = @categoriaSocio AND estadoCategoriaSocio = 1)
-    THROW 60001,'Socio o categoría no válidos.',1;
-
-  INSERT INTO pagos.facturaActiva
-    (idSocio,categoriaSocio,estadoFactura,fechaEmision,
-     fechaPrimerVencimiento,fechaSegundoVencimiento)
-  VALUES
-    (@idSocio,@categoriaSocio,'Pendiente',
-     @hoy, DATEADD(DAY,5,@hoy), DATEADD(DAY,10,@hoy));
-
-  SET @newFacturaId = SCOPE_IDENTITY();
-END;
-GO
-
 CREATE OR ALTER PROCEDURE pagos.actualizarEstadoFacturaActiva
   @idFactura    INT,
   @nuevoEstado  VARCHAR(15)
@@ -1986,167 +2139,6 @@ BEGIN
   UPDATE pagos.facturaActiva
   SET estadoFactura = @nuevoEstado
   WHERE idFactura = @idFactura;
-END;
-GO
-
-CREATE OR ALTER PROCEDURE pagos.emitirFactura
-  @idFactura         INT,
-  @cuilDeudor        VARCHAR(13),
-  @domicilio         VARCHAR(35),
-  @modalidadCobro    VARCHAR(25)  -- e.g. 'Contado' o 'Cuotas:6'
-AS
-BEGIN
-  SET NOCOUNT ON;
-  BEGIN TRANSACTION;
-  BEGIN TRY
-    -- 1) Validar existencia y estado de la factura activa
-    DECLARE @estadoActiva VARCHAR(15);
-    SELECT @estadoActiva = estadoFactura
-      FROM pagos.facturaActiva
-     WHERE idFactura = @idFactura;
-
-    IF @estadoActiva IS NULL
-      THROW 60010, 'Factura activa no encontrada.', 1;
-    IF @estadoActiva <> 'Pendiente'
-      THROW 60011, 'Solo se puede emitir una factura pendiente.', 1;
-
-    -- 2) Validar CUIL
-    IF socios.validarCUIL(@cuilDeudor) = 0
-      THROW 60012, 'CUIL inválido.', 1;
-
-    -- 3) Obtener nombre y apellido del socio
-    DECLARE @nombreSocio VARCHAR(50), @apellidoSocio VARCHAR(50);
-    SELECT @nombreSocio = nombre, @apellidoSocio = apellido
-      FROM socios.socio
-     WHERE idSocio = (
-       SELECT idSocio FROM pagos.facturaActiva WHERE idFactura = @idFactura
-     );
-
-    -- 4) Insertar en facturaEmitida con importes en cero
-    INSERT INTO pagos.facturaEmitida (
-      idFactura,
-      nombreSocio,
-      apellidoSocio,
-      fechaEmision,
-      cuilDeudor,
-      domicilio,
-      modalidadCobro,
-      importeBruto,
-      importeTotal
-    )
-    VALUES (
-      @idFactura,
-      @nombreSocio,
-      @apellidoSocio,
-      GETDATE(),
-      @cuilDeudor,
-      @domicilio,
-      @modalidadCobro,
-      0.00,    -- se inicializa en cero
-      0.00     -- se inicializa en cero
-    );
-
-    -- 5) Marcar activa como emitida (Pagada)
-    UPDATE pagos.facturaActiva
-    SET estadoFactura = 'Pagada'
-    WHERE idFactura = @idFactura;
-
-    COMMIT TRANSACTION;
-  END TRY
-  BEGIN CATCH
-    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-    THROW;
-  END CATCH
-END;
-GO
-
-CREATE OR ALTER PROCEDURE pagos.insertarCuerpoFactura
-  @idFactura        INT,
-  @tipoItem         VARCHAR(20),
-  @descripcionItem  VARCHAR(25),
-  @importeItem      DECIMAL(10,2)
-AS
-BEGIN
-  SET NOCOUNT ON;
-  BEGIN TRANSACTION;
-  BEGIN TRY
-    -- 0) Aplicar descuentos según tipo de ítem
-    IF UPPER(@tipoItem) = 'MEMBRESIA'
-    BEGIN
-      -- 15% de descuento en membresía
-      SET @importeItem = ROUND(@importeItem * 0.85, 2);
-    END
-
-    -- 1) Validar existencia de factura emitida
-    IF NOT EXISTS (SELECT 1 FROM pagos.facturaEmitida WHERE idFactura = @idFactura)
-      THROW 61001, 'Factura no encontrada.', 1;
-
-    -- 2) Generar nuevo idItemFactura
-    DECLARE @newItem INT;
-    SELECT @newItem = COALESCE(MAX(idItemFactura), 0) + 1
-      FROM pagos.cuerpoFactura
-     WHERE idFactura = @idFactura;
-
-    -- 3) Insertar ítem
-    INSERT INTO pagos.cuerpoFactura (
-      idFactura, idItemFactura, tipoItem, descripcionItem, importeItem
-    ) VALUES (
-      @idFactura, @newItem, @tipoItem, @descripcionItem, @importeItem
-    );
-
-    -- 4) Si es deporte, verificar número de deportes para descuento adicional
-    IF UPPER(@tipoItem) = 'DEPORTE'
-    BEGIN
-      DECLARE @countDeporte INT;
-      SELECT @countDeporte = COUNT(*)
-        FROM pagos.cuerpoFactura
-       WHERE idFactura = @idFactura
-         AND UPPER(tipoItem) = 'DEPORTE';
-      IF @countDeporte > 1
-      BEGIN
-        -- Aplicar 10% de descuento a todos los deportes
-        UPDATE pagos.cuerpoFactura
-        SET importeItem = ROUND(importeItem * 0.90, 2)
-        WHERE idFactura = @idFactura
-          AND UPPER(tipoItem) = 'DEPORTE';
-      END
-    END
-
-    -- 5) Ajuste de saldo o importes generales
-    DECLARE @idSocio INT, @saldo DECIMAL(10,2);
-    SELECT @idSocio = fa.idSocio
-      FROM pagos.facturaActiva fa
-     WHERE fa.idFactura = @idFactura;
-
-    SELECT @saldo = saldoTotal
-      FROM socios.saldoAFavorSocio
-     WHERE idSocio = @idSocio;
-
-    IF @saldo >= @importeItem
-    BEGIN
-      -- Descontar del saldo a favor
-      UPDATE socios.saldoAFavorSocio
-      SET saldoTotal = saldoTotal - @importeItem
-      WHERE idSocio = @idSocio;
-    END
-    ELSE
-    BEGIN
-      -- Acumular al importe bruto
-      UPDATE pagos.facturaEmitida
-      SET importeBruto = importeBruto + @importeItem
-      WHERE idFactura = @idFactura;
-
-      UPDATE pagos.facturaEmitida
-      SET importeTotal = importeBruto
-      WHERE idFactura = @idFactura;
-    END
-
-    COMMIT TRANSACTION;
-  END TRY
-  BEGIN CATCH
-    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-    THROW;
-  END CATCH
 END;
 GO
 

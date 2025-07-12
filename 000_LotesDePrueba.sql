@@ -9,6 +9,12 @@
 -- Usar la base de datos
 USE Com2900G03;
 GO
+-- *************************************************************************************
+-- ACLARACION: PARA ESTE .SQL EN PARTICULAR ES RECOMENDABLE IR EJECUTANDO POR PARTES EL
+--			   CODIGO, YA QUE SUELE PASAR QUE NO HACE CARGA DE TODOS LOS DATOS DE FORMA 
+--			   CORRECTA Y, CUANDO SE PASA A EJECUTAR LOS IMPORTS/REPORTES NO MUESTREN 
+--			   DATOS O ESTEN DE INCOMPLETOS. 
+-- *************************************************************************************
 
 -- ********************************************************************************
 -- CARGAR Y DEMOSTRACIÓN DEL FUNCIONAMIENTO PARA CARGA DE SOCIOS (YA OBSOLETO)
@@ -242,7 +248,7 @@ DELETE FROM socios.rolDisponible;
 DELETE FROM socios.categoriaMembresiaSocio;
 GO
 
--- 1) Semilla: categorías de membresía vigentes
+-- 1) Semilla: categorías de membresía vigentes (SON DATOS FALSOS CON RESPECTO AL CSV, EN EL .SQL "01_..." SE CORRIGEN LOS VALORES)
 INSERT INTO socios.categoriaMembresiaSocio (tipo, costoMembresia, vigenciaHasta)
 VALUES
   ('Cadete',  500.00, DATEADD(YEAR,1,GETDATE())),
